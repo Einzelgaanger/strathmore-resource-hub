@@ -1,4 +1,3 @@
-
 export interface User {
   id: string;
   admission_number: string;
@@ -11,6 +10,7 @@ export interface User {
   points: number;
   rank: number;
   reset_code?: string;
+  last_login?: string;
   created_at: string;
 }
 

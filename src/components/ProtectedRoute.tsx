@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -10,6 +10,12 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
+  
+  // Check if user session exists
+  useEffect(() => {
+    // We can add additional checks here if needed
+    console.log("Protected route - Auth state:", { user, loading });
+  }, [user, loading]);
   
   if (loading) {
     return (

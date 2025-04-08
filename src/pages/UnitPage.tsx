@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -101,12 +100,6 @@ export default function UnitPage() {
 
     fetchUnitDetails();
   }, [unitId, user]);
-
-  // Handle resource upload
-  const handleUpload = (type: 'assignment' | 'note' | 'past_paper') => {
-    // This would open a modal or navigate to an upload page
-    toast('Upload functionality will be implemented soon');
-  };
 
   if (loading) {
     return (

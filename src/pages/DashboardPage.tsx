@@ -14,7 +14,31 @@ import { Badge } from '@/components/ui/badge';
 import { RankBadge, getRankFromPoints } from '@/components/ui/rank-badge';
 import { Separator } from '@/components/ui/separator';
 import { supabase, getMarketingContent } from '@/lib/supabase';
+import { Resource, User } from '@/lib/types';
 import { toast } from 'sonner';
+
+interface CompletionWithResource {
+  completed_at: string;
+  resource: {
+    title: string;
+    type: string;
+    created_at: string;
+  };
+}
+
+interface CommentWithResource {
+  created_at: string;
+  resource: {
+    title: string;
+  };
+}
+
+interface ActivityItem {
+  type: string;
+  text: string;
+  time: string;
+  timestamp: number;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -30,7 +54,7 @@ export default function DashboardPage() {
     totalComments: 0,
     loginStreak: 0
   });
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
@@ -161,12 +185,14 @@ export default function DashboardPage() {
       let totalTimeMs = 0;
       let count = 0;
       
-      data.forEach(completion => {
-        const completedAt = new Date(completion.completed_at);
-        const createdAt = new Date(completion.resource.created_at);
-        const timeDiffMs = completedAt.getTime() - createdAt.getTime();
-        totalTimeMs += timeDiffMs;
-        count += 1;
+      data.forEach((completion: any) => {
+        if (completion.resource && completion.resource.created_at) {
+          const completedAt = new Date(completion.completed_at);
+          const createdAt = new Date(completion.resource.created_at);
+          const timeDiffMs = completedAt.getTime() - createdAt.getTime();
+          totalTimeMs += timeDiffMs;
+          count += 1;
+        }
       });
       
       if (count === 0) return 'N/A';
@@ -196,17 +222,17 @@ export default function DashboardPage() {
   };
   
   // Helper to calculate login streak
-  const calculateLoginStreak = (user: any) => {
+  const calculateLoginStreak = (user: User) => {
     // This would be a more complex calculation based on login history
     // For now, return a simple value
     return 1;
   };
   
   // Helper to fetch recent activity
-  const fetchRecentActivity = async (userId: string) => {
+  const fetchRecentActivity = async (userId: string): Promise<ActivityItem[]> => {
     try {
       // Combine activity from multiple sources
-      const activities = [];
+      const activities: ActivityItem[] = [];
       
       // Get recent uploads
       const { data: uploads, error: uploadsError } = await supabase
@@ -217,7 +243,7 @@ export default function DashboardPage() {
         .limit(3);
       
       if (!uploadsError && uploads) {
-        uploads.forEach(upload => {
+        uploads.forEach((upload: Resource) => {
           activities.push({
             type: 'upload',
             text: `You uploaded ${upload.title}`,
@@ -242,13 +268,15 @@ export default function DashboardPage() {
         .limit(3);
       
       if (!completionsError && completions) {
-        completions.forEach(completion => {
-          activities.push({
-            type: 'complete',
-            text: `You completed ${completion.resource.title}`,
-            time: formatRelativeTime(completion.completed_at),
-            timestamp: new Date(completion.completed_at).getTime()
-          });
+        completions.forEach((completion: CompletionWithResource) => {
+          if (completion.resource && completion.resource.title) {
+            activities.push({
+              type: 'complete',
+              text: `You completed ${completion.resource.title}`,
+              time: formatRelativeTime(completion.completed_at),
+              timestamp: new Date(completion.completed_at).getTime()
+            });
+          }
         });
       }
       
@@ -266,13 +294,15 @@ export default function DashboardPage() {
         .limit(3);
       
       if (!commentsError && comments) {
-        comments.forEach(comment => {
-          activities.push({
-            type: 'comment',
-            text: `You commented on ${comment.resource.title}`,
-            time: formatRelativeTime(comment.created_at),
-            timestamp: new Date(comment.created_at).getTime()
-          });
+        comments.forEach((comment: CommentWithResource) => {
+          if (comment.resource && comment.resource.title) {
+            activities.push({
+              type: 'comment',
+              text: `You commented on ${comment.resource.title}`,
+              time: formatRelativeTime(comment.created_at),
+              timestamp: new Date(comment.created_at).getTime()
+            });
+          }
         });
       }
       

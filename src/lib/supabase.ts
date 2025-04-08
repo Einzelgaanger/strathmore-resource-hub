@@ -2,18 +2,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
-// Supabase connection is made using environment variables
-// These would typically be set in your deployment environment
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Use the provided Supabase credentials
+const supabaseUrl = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
-}
-
+// Create the Supabase client
 export const supabase = createClient<Database>(
-  supabaseUrl || '',
-  supabaseAnonKey || ''
+  supabaseUrl,
+  supabaseAnonKey
 );
 
 // Helper function to get the current user
@@ -114,8 +110,8 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
       ),
       completed_at
     `)
-    .eq('resource:unit_id', unitId)
-    .eq('resource:type', 'assignment');
+    .eq('resource.unit_id', unitId)
+    .eq('resource.type', 'assignment');
   
   if (error) {
     console.error('Error fetching rankings:', error);
@@ -127,24 +123,28 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
   // but for demonstration, we'll process it client-side
   const rankings: Record<string, any> = {};
   
-  data?.forEach(completion => {
-    const userId = completion.user_id;
-    const resourceCreatedAt = new Date(completion.resource.created_at);
-    const completedAt = new Date(completion.completed_at);
-    const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
-    
-    if (!rankings[userId]) {
-      rankings[userId] = {
-        user: completion.user,
-        totalTime: 0,
-        count: 0,
-        points: 0
-      };
-    }
-    
-    rankings[userId].totalTime += timeDiffMs;
-    rankings[userId].count += 1;
-  });
+  if (data) {
+    data.forEach(completion => {
+      const userId = completion.user_id;
+      if (completion.resource && completion.resource.created_at) {
+        const resourceCreatedAt = new Date(completion.resource.created_at);
+        const completedAt = new Date(completion.completed_at);
+        const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
+        
+        if (!rankings[userId]) {
+          rankings[userId] = {
+            user: completion.user,
+            totalTime: 0,
+            count: 0,
+            points: 0
+          };
+        }
+        
+        rankings[userId].totalTime += timeDiffMs;
+        rankings[userId].count += 1;
+      }
+    });
+  }
   
   const result = Object.values(rankings)
     .map((ranking: any) => ({

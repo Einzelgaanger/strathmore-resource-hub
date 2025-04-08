@@ -12,6 +12,9 @@ interface Rank {
   max_points: number;
 }
 
+// Define a unified type that works with both database and static ranks
+type RankData = Rank | (typeof RANKS)[number];
+
 interface RankBadgeProps {
   points: number;
   showIcon?: boolean;
@@ -49,8 +52,19 @@ export function RankBadge({ points, showIcon = true, showName = true, className 
   
   // Use fallback ranks if we're still loading or there was an error
   const ranksList = ranks.length > 0 ? ranks : RANKS;
-  const rank = ranksList.find(r => points >= r.min_points && points <= r.max_points) || ranksList[0];
   
+  // Find the appropriate rank based on points
+  let rank: RankData;
+  
+  if (ranks.length > 0) {
+    // Using database ranks
+    rank = ranks.find(r => points >= r.min_points && points <= r.max_points) || ranks[0];
+  } else {
+    // Using static ranks
+    rank = RANKS.find(r => points >= r.min && points <= r.max) || RANKS[0];
+  }
+  
+  // Create a CSS class name based on the rank name
   const rankClass = rank.name
     .toLowerCase()
     .replace(/\s+/g, '-'); // Convert spaces to hyphens

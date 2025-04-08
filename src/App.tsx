@@ -13,7 +13,15 @@ import ProfilePage from "./pages/ProfilePage";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-const queryClient = new QueryClient();
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -23,9 +31,11 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* Public routes */}
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />
             
+            {/* Protected routes */}
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <DashboardPage />
@@ -44,6 +54,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             
+            {/* Handle 404 and redirects */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
