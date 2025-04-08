@@ -1,10 +1,11 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    --background: 210 40% 98%;
     --foreground: 222.2 84% 4.9%;
 
     --card: 0 0% 100%;
@@ -13,16 +14,16 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
+    --primary: 212 100% 25%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 210 40% 96.1%;
+    --secondary: 45 100% 42%;
     --secondary-foreground: 222.2 47.4% 11.2%;
 
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 210 40% 96.1%;
+    --accent: 45 100% 42%;
     --accent-foreground: 222.2 47.4% 11.2%;
 
     --destructive: 0 84.2% 60.2%;
@@ -30,25 +31,18 @@
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --ring: 212 100% 25%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 212 100% 25%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 45 100% 42%;
+    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+    --sidebar-accent: 213 100% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 213 100% 32%;
+    --sidebar-ring: 212 100% 35%;
   }
 
   .dark {
@@ -61,17 +55,17 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 212 100% 25%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 45 100% 42%;
+    --secondary-foreground: 0 0% 0%;
 
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 45 100% 42%;
+    --accent-foreground: 0 0% 0%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
@@ -79,14 +73,15 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --sidebar-background: 212 100% 20%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 45 100% 42%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 213 70% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 213 60% 15%;
+    --sidebar-ring: 212 70% 35%;
   }
 }
 
@@ -97,5 +92,56 @@
 
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .resource-card {
+    @apply border rounded-lg overflow-hidden transition-all duration-300 hover:shadow-md bg-white dark:bg-gray-800;
+  }
+  
+  .rank-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .rank-badge-freshman {
+    @apply bg-rank-freshman text-blue-900;
+  }
+
+  .rank-badge-seeker {
+    @apply bg-rank-seeker text-blue-900;
+  }
+
+  .rank-badge-learner {
+    @apply bg-rank-learner text-blue-900;
+  }
+
+  .rank-badge-ranger {
+    @apply bg-rank-ranger text-white;
+  }
+
+  .rank-badge-achiever {
+    @apply bg-rank-achiever text-white;
+  }
+
+  .rank-badge-champion {
+    @apply bg-rank-champion text-white;
+  }
+
+  .rank-badge-virtuoso {
+    @apply bg-rank-virtuoso text-white;
+  }
+
+  .rank-badge-maven {
+    @apply bg-rank-maven text-white;
+  }
+
+  .rank-badge-elite {
+    @apply bg-rank-elite text-white;
+  }
+
+  .rank-badge-legend {
+    @apply bg-rank-legend text-white;
   }
 }
