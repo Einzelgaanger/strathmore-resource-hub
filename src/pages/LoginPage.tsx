@@ -20,6 +20,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
+import { Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const { login, resetPassword, loading } = useAuth();
@@ -93,7 +94,12 @@ export default function LoginPage() {
                     className="w-full" 
                     disabled={loading}
                   >
-                    {loading ? 'Logging in...' : 'Login'}
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Logging in...
+                      </>
+                    ) : 'Login'}
                   </Button>
                 </form>
               </TabsContent>
@@ -129,7 +135,12 @@ export default function LoginPage() {
                     className="w-full" 
                     disabled={loading}
                   >
-                    {loading ? 'Resetting password...' : 'Reset Password'}
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Resetting password...
+                      </>
+                    ) : 'Reset Password'}
                   </Button>
                 </form>
               </TabsContent>

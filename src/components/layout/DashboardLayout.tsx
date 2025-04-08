@@ -1,13 +1,13 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { LogOut, User as UserIcon, Home, Book, Settings, ChevronLeft, Menu } from 'lucide-react';
+import { LogOut, User as UserIcon, Home, Book, Settings, ChevronLeft, Menu, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Unit } from '@/lib/types';
+import { getUnitsForClassInstance } from '@/lib/supabase';
 
 interface SidebarLinkProps {
   href: string;
@@ -39,20 +39,40 @@ interface DashboardLayoutProps {
   units?: Unit[];
 }
 
-export function DashboardLayout({ children, units = [] }: DashboardLayoutProps) {
+export function DashboardLayout({ children, units: propUnits }: DashboardLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [expanded, setExpanded] = useState(true);
-  
-  // Mock units for now
-  const mockUnits: Unit[] = units.length > 0 ? units : [
-    { id: 1, name: 'Integral Calculus', code: 'MAT 2101', class_instance_id: 1, lecturer: 'Dr. Mary Johnson', created_at: '' },
-    { id: 2, name: 'Real Analysis', code: 'MAT 2102', class_instance_id: 1, lecturer: 'Dr. James Smith', created_at: '' },
-    { id: 3, name: 'Probability Theory', code: 'STA 2101', class_instance_id: 1, lecturer: 'Dr. Elizabeth Wilson', created_at: '' },
-    { id: 4, name: 'Algorithms and Data Structures', code: 'DAT 2101', class_instance_id: 1, lecturer: 'Dr. Michael Brown', created_at: '' },
-    { id: 5, name: 'Information Security, Governance and the Cloud', code: 'DAT 2102', class_instance_id: 1, lecturer: 'Dr. Sarah Taylor', created_at: '' },
-    { id: 6, name: 'Principles of Ethics', code: 'HED 2101', class_instance_id: 1, lecturer: 'Dr. Robert Anderson', created_at: '' }
-  ];
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUnits = async () => {
+      if (!user?.class_instance_id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // If units were passed as props, use those
+        if (propUnits && propUnits.length > 0) {
+          setUnits(propUnits);
+          setLoading(false);
+          return;
+        }
+
+        // Otherwise fetch from database
+        const data = await getUnitsForClassInstance(user.class_instance_id);
+        setUnits(data);
+      } catch (error) {
+        console.error('Failed to fetch units:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUnits();
+  }, [user, propUnits]);
 
   return (
     <div className="flex min-h-screen">
@@ -90,15 +110,21 @@ export function DashboardLayout({ children, units = [] }: DashboardLayoutProps) 
               active={location.pathname === '/dashboard'} 
             />
             
-            {mockUnits.map((unit) => (
-              <SidebarLink 
-                key={unit.id}
-                href={`/unit/${unit.id}`}
-                icon={<Book size={20} />}
-                title={expanded ? unit.code : ''}
-                active={location.pathname === `/unit/${unit.id}`}
-              />
-            ))}
+            {loading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-sidebar-foreground/70" />
+              </div>
+            ) : (
+              units.map((unit) => (
+                <SidebarLink 
+                  key={unit.id}
+                  href={`/unit/${unit.id}`}
+                  icon={<Book size={20} />}
+                  title={expanded ? unit.code : ''}
+                  active={location.pathname === `/unit/${unit.id}`}
+                />
+              ))
+            )}
             
             <SidebarLink 
               href="/profile" 
@@ -120,7 +146,7 @@ export function DashboardLayout({ children, units = [] }: DashboardLayoutProps) 
           {user && (
             <div className="flex items-center gap-3">
               <Avatar>
-                <AvatarImage src={user.profile_picture_url} />
+                <AvatarImage src={user.profile_picture_url || undefined} />
                 <AvatarFallback className="bg-primary text-primary-foreground">
                   {user.name.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
