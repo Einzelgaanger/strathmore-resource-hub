@@ -2,9 +2,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
-// Use the provided Supabase credentials
-const supabaseUrl = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+// Use environment variables with fallbacks for development
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+
+// Check if Supabase configuration is available
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+}
 
 // Create the Supabase client
 export const supabase = createClient<Database>(
@@ -91,8 +96,7 @@ export const getMarketingContent = async () => {
 
 // Helper function to get student rankings for a unit
 export const getStudentRankingsForUnit = async (unitId: number) => {
-  // This would typically involve complex queries that join completions and resources
-  // For now, we'll use a simplified approach
+  // Fetch completions with resource details
   const { data, error } = await supabase
     .from('completions')
     .select(`
@@ -119,8 +123,6 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
   }
   
   // Process the data to calculate average completion times
-  // This would typically be handled by more complex database queries
-  // but for demonstration, we'll process it client-side
   const rankings: Record<string, any> = {};
   
   if (data) {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -5,17 +6,23 @@ import { ResourceGrid } from '@/components/resources/ResourceGrid';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Resource, Unit, User } from '@/lib/types';
-import { BookOpen, FileText, Award, FileQuestion, Loader2 } from 'lucide-react';
+import { BookOpen, FileText, Award, FileQuestion, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { supabase, getResourcesForUnit, getStudentRankingsForUnit } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { format } from 'date-fns';
 
 export default function UnitPage() {
   const { unitId } = useParams<{ unitId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('assignments');
   const [unit, setUnit] = useState<Unit | null>(null);
   const [resources, setResources] = useState<{
@@ -31,6 +38,13 @@ export default function UnitPage() {
   const [completedResourceIds, setCompletedResourceIds] = useState<number[]>([]);
   const [studentRankings, setStudentRankings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [resourceType, setResourceType] = useState<'assignment' | 'note' | 'past_paper'>('assignment');
+  const [resourceTitle, setResourceTitle] = useState('');
+  const [resourceDescription, setResourceDescription] = useState('');
+  const [resourceDeadline, setResourceDeadline] = useState('');
+  const [resourceFile, setResourceFile] = useState<File | null>(null);
 
   useEffect(() => {
     const fetchUnitDetails = async () => {
@@ -101,6 +115,170 @@ export default function UnitPage() {
     fetchUnitDetails();
   }, [unitId, user]);
 
+  const handleUpload = (type: 'assignment' | 'note' | 'past_paper') => {
+    setResourceType(type);
+    setResourceTitle('');
+    setResourceDescription('');
+    setResourceDeadline('');
+    setResourceFile(null);
+    setUploadDialogOpen(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setResourceFile(e.target.files[0]);
+    }
+  };
+
+  const handleSubmitResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user || !unitId || !resourceTitle || !resourceDescription) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    // For notes and past papers, a file is required
+    if ((resourceType === 'note' || resourceType === 'past_paper') && !resourceFile) {
+      toast.error('Please upload a file for this resource type');
+      return;
+    }
+    
+    try {
+      setUploading(true);
+      
+      // Upload file if present
+      let fileUrl = null;
+      if (resourceFile) {
+        const fileName = `${user.id}/${Date.now()}_${resourceFile.name}`;
+        const { data: fileData, error: fileError } = await supabase.storage
+          .from('resources')
+          .upload(fileName, resourceFile);
+        
+        if (fileError) {
+          throw fileError;
+        }
+        
+        // Get public URL for the file
+        const { data: urlData } = await supabase.storage
+          .from('resources')
+          .getPublicUrl(fileName);
+        
+        fileUrl = urlData.publicUrl;
+      }
+      
+      // Create resource record
+      const { data: resource, error: resourceError } = await supabase
+        .from('resources')
+        .insert({
+          title: resourceTitle,
+          description: resourceDescription,
+          file_url: fileUrl,
+          deadline: resourceType === 'assignment' && resourceDeadline ? resourceDeadline : null,
+          unit_id: parseInt(unitId),
+          user_id: user.id,
+          type: resourceType
+        })
+        .select()
+        .single();
+      
+      if (resourceError) {
+        throw resourceError;
+      }
+      
+      toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
+      
+      // Add points for the user based on resource type
+      let pointsToAdd = 0;
+      switch(resourceType) {
+        case 'note':
+          pointsToAdd = 50;
+          break;
+        case 'assignment':
+          pointsToAdd = 10;
+          break;
+        case 'past_paper':
+          pointsToAdd = 20;
+          break;
+      }
+      
+      if (pointsToAdd > 0) {
+        await supabase
+          .from('users')
+          .update({ 
+            points: user.points + pointsToAdd 
+          })
+          .eq('id', user.id);
+      }
+      
+      // Refresh the page data
+      window.location.reload();
+      
+    } catch (error) {
+      console.error('Error uploading resource:', error);
+      toast.error('Failed to upload resource');
+    } finally {
+      setUploading(false);
+      setUploadDialogOpen(false);
+    }
+  };
+
+  const handleCompleteResource = async (resourceId: number) => {
+    if (!user) return;
+    
+    try {
+      // Record completion
+      const { error } = await supabase
+        .from('completions')
+        .insert({
+          user_id: user.id,
+          resource_id: resourceId,
+          completed_at: new Date().toISOString()
+        });
+      
+      if (error) throw error;
+      
+      // Update points (20 points for completing assignment)
+      await supabase
+        .from('users')
+        .update({ 
+          points: user.points + 20 
+        })
+        .eq('id', user.id);
+      
+      // Update local state
+      setCompletedResourceIds([...completedResourceIds, resourceId]);
+      
+      toast.success('Assignment marked as complete!');
+    } catch (error) {
+      console.error('Error marking assignment as complete:', error);
+      toast.error('Failed to mark assignment as complete');
+    }
+  };
+
+  const handleDeleteResource = async (resourceId: number) => {
+    try {
+      const { error } = await supabase
+        .from('resources')
+        .delete()
+        .eq('id', resourceId);
+      
+      if (error) throw error;
+      
+      // Filter out the deleted resource from the local state
+      setResources({
+        assignments: resources.assignments.filter(r => r.id !== resourceId),
+        notes: resources.notes.filter(r => r.id !== resourceId),
+        past_papers: resources.past_papers.filter(r => r.id !== resourceId)
+      });
+      
+      toast.success('Resource deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting resource:', error);
+      toast.error('Failed to delete resource');
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -167,6 +345,8 @@ export default function UnitPage() {
               resources={resources.assignments} 
               creators={creators}
               completedResourceIds={completedResourceIds}
+              onCompleteResource={handleCompleteResource}
+              onDeleteResource={handleDeleteResource}
               emptyMessage="No assignments available for this unit yet."
             />
           </TabsContent>
@@ -180,6 +360,7 @@ export default function UnitPage() {
             <ResourceGrid 
               resources={resources.notes} 
               creators={creators}
+              onDeleteResource={handleDeleteResource}
               emptyMessage="No notes available for this unit yet."
             />
           </TabsContent>
@@ -193,6 +374,7 @@ export default function UnitPage() {
             <ResourceGrid 
               resources={resources.past_papers} 
               creators={creators}
+              onDeleteResource={handleDeleteResource}
               emptyMessage="No past papers available for this unit yet."
             />
           </TabsContent>
@@ -255,6 +437,80 @@ export default function UnitPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Upload {resourceType === 'assignment' 
+                ? 'Assignment' 
+                : resourceType === 'note' 
+                  ? 'Notes' 
+                  : 'Past Paper'}
+            </DialogTitle>
+            <DialogDescription>
+              Share resources with your classmates to earn points.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleSubmitResource} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <Input 
+                id="title" 
+                value={resourceTitle} 
+                onChange={(e) => setResourceTitle(e.target.value)}
+                placeholder="Enter a title for your resource"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea 
+                id="description" 
+                value={resourceDescription}
+                onChange={(e) => setResourceDescription(e.target.value)}
+                placeholder="Provide a description of this resource"
+                required
+              />
+            </div>
+            
+            {resourceType === 'assignment' && (
+              <div className="space-y-2">
+                <Label htmlFor="deadline">Deadline (optional)</Label>
+                <Input 
+                  id="deadline" 
+                  type="datetime-local"
+                  value={resourceDeadline}
+                  onChange={(e) => setResourceDeadline(e.target.value)}
+                />
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="file">
+                File {resourceType === 'assignment' ? '(optional)' : '(required)'}
+              </Label>
+              <Input 
+                id="file" 
+                type="file"
+                onChange={handleFileChange}
+                required={resourceType !== 'assignment'}
+              />
+            </div>
+            
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setUploadDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={uploading}>
+                {uploading ? 'Uploading...' : 'Upload'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

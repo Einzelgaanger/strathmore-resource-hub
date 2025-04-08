@@ -1,308 +1,310 @@
-
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { toast } from 'sonner';
-import { User } from '@/lib/types';
+import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
+import { User } from '@/lib/types';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
-import { supabase, getUserDetails } from '@/lib/supabase';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  error: string | null;
-  login: (admissionNumber: string, password: string) => Promise<void>;
-  logout: () => void;
-  resetPassword: (admissionNumber: string, resetCode: string) => Promise<void>;
-  updateProfile: (data: Partial<User>) => Promise<void>;
-  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  login: (admissionNumber: string, password: string) => Promise<User | null>;
+  signUp: (email: string, password: string, userData: Partial<User>) => Promise<any>;
+  logout: () => Promise<void>;
+  resetPassword: (admissionNumber: string, resetCode: string) => Promise<boolean>;
+  updateResetCode: (userId: string, resetCode: string) => Promise<boolean>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
+  updateProfilePicture: (userId: string, file: File) => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export function AuthProvider({ children }: AuthProviderProps) {
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Check for existing session and load user data
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          // Get additional user details from our users table
-          const userDetails = await getUserDetails(session.user.id);
-          
-          if (userDetails) {
-            setUser({
-              id: userDetails.id,
-              admission_number: userDetails.admission_number,
-              email: userDetails.email,
-              name: userDetails.name,
-              profile_picture_url: userDetails.profile_picture_url,
-              class_instance_id: userDetails.class_instance_id,
-              is_admin: userDetails.is_admin,
-              is_super_admin: userDetails.is_super_admin,
-              points: userDetails.points,
-              rank: userDetails.rank,
-              reset_code: userDetails.reset_code,
-              created_at: userDetails.created_at
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Session check error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkSession();
-    
-    // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-          // User has signed in, fetch their details
-          try {
-            const userDetails = await getUserDetails(session.user.id);
-            
-            if (userDetails) {
-              setUser({
-                id: userDetails.id,
-                admission_number: userDetails.admission_number,
-                email: userDetails.email,
-                name: userDetails.name,
-                profile_picture_url: userDetails.profile_picture_url,
-                class_instance_id: userDetails.class_instance_id,
-                is_admin: userDetails.is_admin,
-                is_super_admin: userDetails.is_super_admin,
-                points: userDetails.points,
-                rank: userDetails.rank,
-                reset_code: userDetails.reset_code,
-                created_at: userDetails.created_at
-              });
-            }
-          } catch (err) {
-            console.error('Error loading user details:', err);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          // User has signed out
-          setUser(null);
-        }
-      }
-    );
-
-    // Clean up subscription
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
+  // Authentication functions
   const login = async (admissionNumber: string, password: string) => {
-    setLoading(true);
-    setError(null);
     try {
-      // First, check if the admission number exists in our users table
-      const { data: users, error: userError } = await supabase
+      // First check if the user exists in our users table
+      const { data: userData, error: userError } = await supabase
         .from('users')
         .select('email')
         .eq('admission_number', admissionNumber)
         .single();
       
       if (userError) {
-        throw new Error(`Invalid admission number. Please try again.`);
+        throw new Error('Invalid admission number or password');
       }
       
-      // Now, use the email from our users table to authenticate with Supabase Auth
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: users.email,
-        password: password,
+      // If the user exists, try to sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: password
       });
       
-      if (signInError) {
-        throw new Error('Invalid password. Please try again or use the reset password option.');
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('Invalid admission number or password');
+        }
+        throw error;
       }
       
-      // Update last login timestamp
-      await supabase
+      // Get the user details from our users table
+      const { data: userDetails, error: detailsError } = await supabase
         .from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('admission_number', admissionNumber);
+        .select('*')
+        .eq('email', userData.email)
+        .single();
       
-      toast.success('Login successful!');
-      navigate('/dashboard');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+      if (detailsError) {
+        throw detailsError;
+      }
+      
+      setUser(userDetails);
+      return userDetails;
+    } catch (error: any) {
+      console.error('Login error:', error);
+      throw new Error(error.message || 'An error occurred during login');
+    }
+  };
+
+  const signUp = async (email: string, password: string, userData: Partial<User>) => {
+    try {
+      // Create the user in Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password
+      });
+      
+      if (error) throw error;
+      
+      // Create the user in our users table
+      if (data.user) {
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            ...userData
+          });
+        
+        if (insertError) throw insertError;
+      }
+      
+      return data;
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      throw new Error(error.message || 'An error occurred during signup');
     }
   };
 
   const logout = async () => {
-    setLoading(true);
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setUser(null);
-      toast.success('Logged out successfully');
       navigate('/login');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to log out';
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+    } catch (error: any) {
+      console.error('Logout error:', error);
+      throw new Error(error.message || 'An error occurred during logout');
     }
   };
 
   const resetPassword = async (admissionNumber: string, resetCode: string) => {
-    setLoading(true);
-    setError(null);
     try {
-      // Check if admission number exists and matches reset code
-      const { data: users, error: userError } = await supabase
+      // Check if admission number and reset code match
+      const { data, error } = await supabase
         .from('users')
-        .select('email, reset_code')
+        .select('email')
         .eq('admission_number', admissionNumber)
+        .eq('reset_code', resetCode)
         .single();
       
-      if (userError) {
-        throw new Error('Invalid admission number. Please try again.');
-      }
-      
-      if (!users.reset_code || users.reset_code !== resetCode) {
-        throw new Error('Invalid secret key. Please try again.');
+      if (error) {
+        throw new Error('Invalid admission number or reset code');
       }
       
       // Reset password to default
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        users.email,
-        { redirectTo: `${window.location.origin}/reset-password` }
-      );
-      
-      if (resetError) {
-        throw new Error('Failed to reset password. Please try again later.');
-      }
-      
-      // Also update in our users table
-      await supabase
+      const { error: updateError } = await supabase
         .from('users')
         .update({ password: DEFAULT_PASSWORD })
         .eq('admission_number', admissionNumber);
       
-      toast.success('Password has been reset to the default password. Please check your email for further instructions.');
-      navigate('/login');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateProfile = async (data: Partial<User>) => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (!user) {
-        throw new Error('You must be logged in to update your profile');
-      }
-      
-      // Update user data in our table
-      const { error: updateError } = await supabase
-        .from('users')
-        .update(data)
-        .eq('id', user.id);
-      
       if (updateError) {
-        throw new Error('Failed to update profile. Please try again.');
+        throw updateError;
       }
       
-      // Update local state
-      setUser({ ...user, ...data });
-      toast.success('Profile updated successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+      return true;
+    } catch (error: any) {
+      console.error('Reset password error:', error);
+      throw new Error(error.message || 'An error occurred during password reset');
     }
   };
 
-  const changePassword = async (currentPassword: string, newPassword: string) => {
-    setLoading(true);
-    setError(null);
+  const updateResetCode = async (userId: string, resetCode: string) => {
     try {
-      if (!user) {
-        throw new Error('You must be logged in to change your password');
-      }
+      const { error } = await supabase
+        .from('users')
+        .update({ reset_code: resetCode })
+        .eq('id', userId);
       
-      // First verify current password by trying to sign in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      if (error) throw error;
+      
+      // Update the local user state
+      setUser(prev => prev ? { ...prev, reset_code: resetCode } : null);
+      
+      return true;
+    } catch (error: any) {
+      console.error('Update reset code error:', error);
+      throw new Error(error.message || 'An error occurred while updating reset code');
+    }
+  };
+
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      if (!user?.email) throw new Error('User email not found');
+      
+      // Verify current password
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
         email: user.email,
-        password: currentPassword,
+        password: currentPassword
       });
       
-      if (signInError) {
+      if (verifyError) {
         throw new Error('Current password is incorrect');
       }
       
-      // Update password in Supabase Auth
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
+      // Update password
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
       });
       
-      if (updateError) {
-        throw new Error('Failed to update password. Please try again.');
-      }
+      if (error) throw error;
       
-      // Also update in our users table
-      await supabase
+      // Update password in users table
+      const { error: updateError } = await supabase
         .from('users')
         .update({ password: newPassword })
         .eq('id', user.id);
       
-      toast.success('Password changed successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+      if (updateError) throw updateError;
+      
+      return true;
+    } catch (error: any) {
+      console.error('Update password error:', error);
+      throw new Error(error.message || 'An error occurred while updating password');
     }
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        error,
-        login,
-        logout,
-        resetPassword,
-        updateProfile,
-        changePassword
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
-}
+  const updateProfilePicture = async (userId: string, file: File) => {
+    try {
+      // Upload the file
+      const fileName = `${userId}/${Date.now()}_profile.${file.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage
+        .from('profiles')
+        .upload(fileName, file);
+      
+      if (uploadError) throw uploadError;
+      
+      // Get the public URL
+      const { data: urlData } = await supabase.storage
+        .from('profiles')
+        .getPublicUrl(fileName);
+      
+      // Update the user record
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ profile_picture_url: urlData.publicUrl })
+        .eq('id', userId);
+      
+      if (updateError) throw updateError;
+      
+      // Update the local user state
+      setUser(prev => prev ? { ...prev, profile_picture_url: urlData.publicUrl } : null);
+      
+      return urlData.publicUrl;
+    } catch (error: any) {
+      console.error('Update profile picture error:', error);
+      throw new Error(error.message || 'An error occurred while updating profile picture');
+    }
+  };
+
+  // Check for user session on initial load and auth state changes
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        // Get the current auth session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          // Get user details from our users table
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (error) {
+            throw error;
+          }
+          
+          setUser(data);
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchUser();
+    
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          // Get user details on auth state change
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (!error) {
+            setUser(data);
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      }
+    );
+    
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const value = {
+    user,
+    loading,
+    login,
+    signUp,
+    logout,
+    resetPassword,
+    updateResetCode,
+    updatePassword,
+    updateProfilePicture
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

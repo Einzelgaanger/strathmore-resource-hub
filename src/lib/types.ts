@@ -1,3 +1,4 @@
+
 export interface User {
   id: string;
   admission_number: string;
@@ -23,6 +24,7 @@ export interface ClassInstance {
   group_id: number;
   admin_id?: string;
   created_at: string;
+  description?: string; // Added for class instance description
 }
 
 export interface Program {
@@ -80,6 +82,11 @@ export interface Resource {
   likes: number;
   dislikes: number;
   created_at: string;
+  user?: {
+    name: string;
+    profile_picture_url?: string;
+    admission_number: string;
+  };
 }
 
 export interface Completion {
@@ -90,6 +97,14 @@ export interface Completion {
   created_at: string;
 }
 
+export interface CompletionWithResource extends Completion {
+  resource: {
+    title: string;
+    type: string;
+    created_at: string;
+  };
+}
+
 export interface Comment {
   id: number;
   content: string;
@@ -97,6 +112,12 @@ export interface Comment {
   resource_id: number;
   created_at: string;
   user?: User;
+}
+
+export interface CommentWithResource extends Comment {
+  resource: {
+    title: string;
+  };
 }
 
 export interface MarketingContent {

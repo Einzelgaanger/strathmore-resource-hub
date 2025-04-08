@@ -1,579 +1,514 @@
 
-import React, { useEffect, useState } from 'react';
-import { 
-  BarChart, BookOpen, CheckCircle, Clock, Trophy, 
-  Upload, Users, Calendar, Star, Loader2 
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { RankBadge, getRankFromPoints } from '@/components/ui/rank-badge';
-import { Separator } from '@/components/ui/separator';
-import { supabase, getMarketingContent } from '@/lib/supabase';
-import { Resource, User } from '@/lib/types';
-import { toast } from 'sonner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, Star, UserCheck, BookOpen, Info, Calendar } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { Unit, MarketingContent, CompletionWithResource, CommentWithResource } from '@/lib/types';
+import { RANKS } from '@/lib/constants';
+import { Button } from '@/components/ui/button';
+import { formatDistance } from 'date-fns';
 
-interface CompletionWithResource {
-  completed_at: string;
-  resource: {
-    title: string;
-    type: string;
-    created_at: string;
-  };
-}
-
-interface CommentWithResource {
-  created_at: string;
-  resource: {
-    title: string;
-  };
-}
-
-interface ActivityItem {
-  type: string;
-  text: string;
-  time: string;
-  timestamp: number;
-}
+const pointsColors = ['#4C51BF', '#4299E1', '#38B2AC', '#48BB78', '#ECC94B', '#ED8936', '#F56565'];
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [marketingContent, setMarketingContent] = useState<any[]>([]);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>({
-    totalResources: 0,
+  const [loading, setLoading] = useState(true);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [marketingContent, setMarketingContent] = useState<MarketingContent[]>([]);
+  const [topUsers, setTopUsers] = useState<any[]>([]);
+  const [userStats, setUserStats] = useState({
     completedAssignments: 0,
     totalAssignments: 0,
-    completionRate: 0,
-    averageCompletionTime: 'N/A',
-    totalUploads: 0,
-    totalComments: 0,
-    loginStreak: 0
+    uploadedResources: 0,
+    comments: 0,
+    lastLogin: null as string | null,
   });
-  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  
+  const [activityData, setActivityData] = useState<{
+    completions: CompletionWithResource[];
+    comments: CommentWithResource[];
+  }>({
+    completions: [],
+    comments: []
+  });
+
+  // Get user rank details
+  const userRank = RANKS.find(rank => 
+    user?.points !== undefined && user.points >= rank.min_points && user.points <= rank.max_points
+  ) || RANKS[0];
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!user) return;
       
       try {
-        // Fetch marketing content
-        const marketingData = await getMarketingContent();
-        setMarketingContent(marketingData);
+        // Fetch units for user's class
+        const { data: unitsData, error: unitsError } = await supabase
+          .from('units')
+          .select('*')
+          .eq('class_instance_id', user.class_instance_id)
+          .order('name');
         
-        // Fetch leaderboard
-        const { data: leaderboardData, error: leaderboardError } = await supabase
+        if (unitsError) throw unitsError;
+        setUnits(unitsData || []);
+        
+        // Fetch marketing content
+        const { data: marketingData, error: marketingError } = await supabase
+          .from('marketing_content')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (marketingError) throw marketingError;
+        setMarketingContent(marketingData || []);
+        
+        // Fetch top users by points
+        const { data: topUsersData, error: topUsersError } = await supabase
           .from('users')
-          .select('id, name, admission_number, points, profile_picture_url')
+          .select('id, name, admission_number, profile_picture_url, points, rank')
+          .eq('class_instance_id', user.class_instance_id)
           .order('points', { ascending: false })
           .limit(10);
         
-        if (!leaderboardError && leaderboardData) {
-          setLeaderboard(leaderboardData);
-        }
+        if (topUsersError) throw topUsersError;
+        setTopUsers(topUsersData || []);
         
-        // Fetch stats
-        if (user.class_instance_id) {
-          // Get all units for this class
-          const { data: units, error: unitsError } = await supabase
-            .from('units')
-            .select('id')
-            .eq('class_instance_id', user.class_instance_id);
-          
-          if (!unitsError && units) {
-            const unitIds = units.map(u => u.id);
-            
-            // Count total resources
-            const { count: totalResourcesCount, error: resourcesError } = await supabase
-              .from('resources')
-              .select('*', { count: 'exact', head: true })
-              .in('unit_id', unitIds);
-            
-            // Count total assignments
-            const { count: totalAssignmentsCount, error: assignmentsError } = await supabase
-              .from('resources')
-              .select('*', { count: 'exact', head: true })
-              .in('unit_id', unitIds)
-              .eq('type', 'assignment');
-            
-            // Count completed assignments
-            const { count: completedAssignmentsCount, error: completionsError } = await supabase
-              .from('completions')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', user.id)
-              .in('resource_id', await getAssignmentIds(unitIds));
-            
-            // Count user uploads
-            const { count: totalUploadsCount, error: uploadsError } = await supabase
-              .from('resources')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', user.id);
-            
-            // Count user comments
-            const { count: totalCommentsCount, error: commentsError } = await supabase
-              .from('comments')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', user.id);
-            
-            // Calculate completion rate
-            const completionRate = totalAssignmentsCount && totalAssignmentsCount > 0
-              ? Math.round((completedAssignmentsCount || 0) / totalAssignmentsCount * 100)
-              : 0;
-            
-            // Set stats
-            setStats({
-              totalResources: totalResourcesCount || 0,
-              completedAssignments: completedAssignmentsCount || 0,
-              totalAssignments: totalAssignmentsCount || 0,
-              completionRate,
-              averageCompletionTime: await calculateAverageCompletionTime(user.id),
-              totalUploads: totalUploadsCount || 0,
-              totalComments: totalCommentsCount || 0,
-              loginStreak: calculateLoginStreak(user),
-              nextRank: getRankFromPoints(user.points + 100)
-            });
-          }
-        }
+        // Calculate total assignments for user's class
+        const { count: totalAssignments, error: totalAssignmentsError } = await supabase
+          .from('resources')
+          .select('id', { count: 'exact' })
+          .eq('type', 'assignment')
+          .in('unit_id', (unitsData || []).map(unit => unit.id));
         
-        // Fetch recent activity
-        const recentActivityData = await fetchRecentActivity(user.id);
-        setRecentActivity(recentActivityData);
+        if (totalAssignmentsError) throw totalAssignmentsError;
         
+        // Calculate user's completed assignments
+        const { count: completedAssignments, error: completedAssignmentsError } = await supabase
+          .from('completions')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id);
+        
+        if (completedAssignmentsError) throw completedAssignmentsError;
+        
+        // Calculate user's uploaded resources
+        const { count: uploadedResources, error: uploadedResourcesError } = await supabase
+          .from('resources')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id);
+        
+        if (uploadedResourcesError) throw uploadedResourcesError;
+        
+        // Calculate user's comments
+        const { count: comments, error: commentsError } = await supabase
+          .from('comments')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id);
+        
+        if (commentsError) throw commentsError;
+        
+        // Get user's recent completions
+        const { data: completionsData, error: completionsError } = await supabase
+          .from('completions')
+          .select(`
+            completed_at,
+            resource:resource_id (
+              title,
+              type,
+              created_at
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('completed_at', { ascending: false })
+          .limit(5);
+        
+        if (completionsError) throw completionsError;
+        
+        // Get user's recent comments
+        const { data: commentsData, error: recentCommentsError } = await supabase
+          .from('comments')
+          .select(`
+            created_at,
+            resource:resource_id (
+              title
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        
+        if (recentCommentsError) throw recentCommentsError;
+        
+        // Update user stats
+        setUserStats({
+          completedAssignments: completedAssignments || 0,
+          totalAssignments: totalAssignments || 0,
+          uploadedResources: uploadedResources || 0,
+          comments: comments || 0,
+          lastLogin: user.last_login || null,
+        });
+        
+        // Set activity data
+        setActivityData({
+          completions: (completionsData || []).map(item => ({
+            ...item,
+            resource: {
+              title: item.resource?.title || 'Unknown',
+              type: item.resource?.type || 'assignment',
+              created_at: item.resource?.created_at || new Date().toISOString()
+            }
+          })) as CompletionWithResource[],
+          comments: (commentsData || []).map(item => ({
+            ...item,
+            resource: {
+              title: item.resource?.title || 'Unknown'
+            }
+          })) as CommentWithResource[]
+        });
       } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        toast.error('Failed to load some dashboard data');
+        console.error('Error loading dashboard data:', error);
       } finally {
         setLoading(false);
       }
     };
-    
+
     fetchDashboardData();
+    
+    // Update login points - once per session
+    const updateLoginPoints = async () => {
+      if (!user) return;
+      
+      try {
+        // Add 5 points for logging in
+        await supabase
+          .from('users')
+          .update({ 
+            points: user.points + 5,
+            last_login: new Date().toISOString()
+          })
+          .eq('id', user.id);
+      } catch (error) {
+        console.error('Error updating login points:', error);
+      }
+    };
+    
+    if (user && !user.last_login) {
+      updateLoginPoints();
+    }
   }, [user]);
-  
-  // Helper to get assignment IDs for a set of units
-  const getAssignmentIds = async (unitIds: number[]) => {
-    const { data, error } = await supabase
-      .from('resources')
-      .select('id')
-      .in('unit_id', unitIds)
-      .eq('type', 'assignment');
-    
-    if (error || !data) return [];
-    return data.map(r => r.id);
-  };
-  
-  // Helper to calculate average completion time
-  const calculateAverageCompletionTime = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('completions')
-        .select(`
-          completed_at,
-          resource:resource_id (
-            created_at
-          )
-        `)
-        .eq('user_id', userId);
-      
-      if (error || !data || data.length === 0) return 'N/A';
-      
-      let totalTimeMs = 0;
-      let count = 0;
-      
-      data.forEach((completion: any) => {
-        if (completion.resource && completion.resource.created_at) {
-          const completedAt = new Date(completion.completed_at);
-          const createdAt = new Date(completion.resource.created_at);
-          const timeDiffMs = completedAt.getTime() - createdAt.getTime();
-          totalTimeMs += timeDiffMs;
-          count += 1;
-        }
-      });
-      
-      if (count === 0) return 'N/A';
-      
-      const avgTimeMs = totalTimeMs / count;
-      return formatTime(avgTimeMs);
-    } catch (error) {
-      console.error('Error calculating average time:', error);
-      return 'N/A';
-    }
-  };
-  
-  // Helper to format time
-  const formatTime = (ms: number) => {
-    const seconds = Math.floor((ms / 1000) % 60);
-    const minutes = Math.floor((ms / (1000 * 60)) % 60);
-    const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
-    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-    
-    let result = '';
-    if (days > 0) result += `${days}d `;
-    if (hours > 0) result += `${hours}h `;
-    if (minutes > 0) result += `${minutes}m `;
-    if (seconds > 0) result += `${seconds}s`;
-    
-    return result.trim() || '0s';
-  };
-  
-  // Helper to calculate login streak
-  const calculateLoginStreak = (user: User) => {
-    // This would be a more complex calculation based on login history
-    // For now, return a simple value
-    return 1;
-  };
-  
-  // Helper to fetch recent activity
-  const fetchRecentActivity = async (userId: string): Promise<ActivityItem[]> => {
-    try {
-      // Combine activity from multiple sources
-      const activities: ActivityItem[] = [];
-      
-      // Get recent uploads
-      const { data: uploads, error: uploadsError } = await supabase
-        .from('resources')
-        .select('id, title, created_at, type')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(3);
-      
-      if (!uploadsError && uploads) {
-        uploads.forEach((upload: Resource) => {
-          activities.push({
-            type: 'upload',
-            text: `You uploaded ${upload.title}`,
-            time: formatRelativeTime(upload.created_at),
-            timestamp: new Date(upload.created_at).getTime()
-          });
-        });
-      }
-      
-      // Get recent completions
-      const { data: completions, error: completionsError } = await supabase
-        .from('completions')
-        .select(`
-          completed_at,
-          resource:resource_id (
-            title,
-            type
-          )
-        `)
-        .eq('user_id', userId)
-        .order('completed_at', { ascending: false })
-        .limit(3);
-      
-      if (!completionsError && completions) {
-        completions.forEach((completion: CompletionWithResource) => {
-          if (completion.resource && completion.resource.title) {
-            activities.push({
-              type: 'complete',
-              text: `You completed ${completion.resource.title}`,
-              time: formatRelativeTime(completion.completed_at),
-              timestamp: new Date(completion.completed_at).getTime()
-            });
-          }
-        });
-      }
-      
-      // Get recent comments
-      const { data: comments, error: commentsError } = await supabase
-        .from('comments')
-        .select(`
-          created_at,
-          resource:resource_id (
-            title
-          )
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(3);
-      
-      if (!commentsError && comments) {
-        comments.forEach((comment: CommentWithResource) => {
-          if (comment.resource && comment.resource.title) {
-            activities.push({
-              type: 'comment',
-              text: `You commented on ${comment.resource.title}`,
-              time: formatRelativeTime(comment.created_at),
-              timestamp: new Date(comment.created_at).getTime()
-            });
-          }
-        });
-      }
-      
-      // Add login activity if user has last_login
-      if (user.last_login) {
-        activities.push({
-          type: 'login',
-          text: 'You logged in',
-          time: formatRelativeTime(user.last_login),
-          timestamp: new Date(user.last_login).getTime()
-        });
-      }
-      
-      // Sort by timestamp descending and return top 5
-      return activities
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 5);
-    } catch (error) {
-      console.error('Error fetching recent activity:', error);
-      return [];
-    }
-  };
-  
-  // Helper to format relative time
-  const formatRelativeTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    
-    const seconds = Math.floor(diffMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) {
-      return `${days} day${days !== 1 ? 's' : ''} ago`;
-    } else if (hours > 0) {
-      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-    } else if (minutes > 0) {
-      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-    } else {
-      return 'Just now';
-    }
-  };
-  
-  if (!user) {
-    return <div>Loading...</div>;
-  }
-  
-  const currentRank = getRankFromPoints(user.points);
-  const pointsToNextRank = stats.nextRank ? stats.nextRank.min - user.points : 0;
-  const progressToNextRank = currentRank && currentRank.max > currentRank.min
-    ? ((user.points - currentRank.min) / (currentRank.max - currentRank.min)) * 100
-    : 0;
-  
-  return (
-    <DashboardLayout>
-      {loading ? (
+
+  if (loading) {
+    return (
+      <DashboardLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-strathmore-blue" />
-            <p className="text-lg font-medium">Loading dashboard data...</p>
+            <p className="text-lg font-medium">Loading dashboard...</p>
           </div>
         </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex flex-col">
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col">
+        <div className="flex-1 space-y-6">
+          <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back, {user.name}! Track your progress and see what's new.
-            </p>
+            <div className="flex items-center gap-2">
+              <div>
+                <p className="text-sm text-muted-foreground text-right">
+                  Last login: {userStats.lastLogin ? formatDistance(new Date(userStats.lastLogin), new Date(), { addSuffix: true }) : 'First time'}
+                </p>
+              </div>
+            </div>
           </div>
           
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* Marketing Content */}
+          {marketingContent.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Announcements</h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {marketingContent.slice(0, 3).map((content) => (
+                  <Card key={content.id} className="overflow-hidden">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">{content.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className={`text-sm ${content.type === 'quote' ? 'italic' : ''}`}>
+                        {content.content}
+                      </p>
+                      {content.file_url && (
+                        <div className="mt-4">
+                          {content.type === 'image' ? (
+                            <img 
+                              src={content.file_url} 
+                              alt={content.title} 
+                              className="rounded-md w-full h-32 object-cover"
+                            />
+                          ) : (
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => window.open(content.file_url, '_blank')}
+                            >
+                              View Resource
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* User Stats and Activity */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Your Rank</CardTitle>
-                <Trophy className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Assignments Completed</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold">{currentRank.icon}</span>
-                      <div>
-                        <div className="font-semibold">{currentRank.name}</div>
-                        <div className="text-xs text-muted-foreground">{user.points} points</div>
-                      </div>
-                    </div>
-                    <RankBadge points={user.points} />
-                  </div>
-                  
-                  <Progress value={progressToNextRank} className="h-2" />
-                  
-                  <div className="text-xs text-muted-foreground">
-                    {pointsToNextRank} points to reach {stats.nextRank?.name || "next rank"}
-                  </div>
+                <div className="text-2xl font-bold">{userStats.completedAssignments}/{userStats.totalAssignments}</div>
+                <p className="text-xs text-muted-foreground">
+                  {userStats.totalAssignments === 0 
+                    ? 'No assignments available' 
+                    : `${Math.round((userStats.completedAssignments / userStats.totalAssignments) * 100)}% completion rate`
+                  }
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Your Points</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{user?.points || 0}</div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">Rank:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {userRank.icon} {userRank.name}
+                  </Badge>
                 </div>
               </CardContent>
             </Card>
             
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Assignment Completion</CardTitle>
-                <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Resources Shared</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col gap-3">
-                  <div className="text-2xl font-bold">{stats.completionRate}%</div>
-                  <Progress value={stats.completionRate} className="h-2" />
-                  <div className="text-xs text-muted-foreground">
-                    {stats.completedAssignments} of {stats.totalAssignments} assignments completed
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average Completion Time</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.averageCompletionTime}</div>
+                <div className="text-2xl font-bold">{userStats.uploadedResources}</div>
                 <p className="text-xs text-muted-foreground">
-                  Per assignment
+                  {userStats.uploadedResources === 0 
+                    ? 'No resources uploaded yet' 
+                    : `+${userStats.uploadedResources * 10} points earned`
+                  }
                 </p>
               </CardContent>
             </Card>
             
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Resources Accessed</CardTitle>
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Comments Made</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats.totalResources}</div>
+                <div className="text-2xl font-bold">{userStats.comments}</div>
                 <p className="text-xs text-muted-foreground">
-                  Across all your units
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Your Contributions</CardTitle>
-                <Upload className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.totalUploads}</div>
-                <p className="text-xs text-muted-foreground">
-                  Uploads and {stats.totalComments} comments
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Login Streak</CardTitle>
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.loginStreak} days</div>
-                <p className="text-xs text-muted-foreground">
-                  Keep it up for more points!
+                  {userStats.comments === 0 
+                    ? 'No comments yet' 
+                    : `+${userStats.comments} points earned`
+                  }
                 </p>
               </CardContent>
             </Card>
           </div>
           
-          <div className="grid gap-4 md:grid-cols-7">
+          {/* Class Leaderboard and User Activity */}
+          <div className="grid gap-6 md:grid-cols-7">
             <Card className="md:col-span-4">
               <CardHeader>
-                <CardTitle>Announcements</CardTitle>
+                <CardTitle>Class Leaderboard</CardTitle>
                 <CardDescription>
-                  Important updates from administrators
+                  Top students ranked by points earned
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {marketingContent.length > 0 ? (
-                  marketingContent.map((announcement) => (
-                    <div key={announcement.id} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold">{announcement.title}</h4>
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(announcement.created_at), 'MMM d, yyyy')}
-                        </span>
+              <CardContent>
+                <div className="space-y-4">
+                  {topUsers.slice(0, 5).map((topUser, index) => {
+                    const userRankInfo = RANKS.find(r => 
+                      topUser.points >= r.min_points && topUser.points <= r.max_points
+                    ) || RANKS[0];
+                    
+                    return (
+                      <div key={topUser.id} className="flex items-center gap-4">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          {index + 1}
+                        </div>
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={topUser.profile_picture_url} />
+                          <AvatarFallback>{topUser.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="ml-auto font-medium">
+                          {topUser.points} points
+                        </div>
+                        <div className="ml-auto text-muted-foreground text-sm">
+                          {userRankInfo.icon} {userRankInfo.name}
+                        </div>
                       </div>
-                      <p className="text-sm">{announcement.content}</p>
-                      <Separator />
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No announcements available.</p>
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
             
             <Card className="md:col-span-3">
               <CardHeader>
-                <CardTitle>Top Performers</CardTitle>
+                <CardTitle>Your Progress</CardTitle>
                 <CardDescription>
-                  Students with the most points
+                  Points breakdown and next rank
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {leaderboard.length > 0 ? (
-                  leaderboard.map((leader, index) => (
-                    <div key={leader.id} className="flex items-center gap-3">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                        {index + 1}
-                      </div>
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={leader.profile_picture_url || undefined} />
-                        <AvatarFallback>{leader.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 truncate">
-                        <div className="font-medium">{leader.name}</div>
-                        <div className="text-xs text-muted-foreground">{leader.admission_number}</div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Star className="h-3.5 w-3.5 fill-strathmore-gold text-strathmore-gold" />
-                        <span className="font-medium">{leader.points}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No leaderboard data available yet.</p>
-                  </div>
-                )}
+              <CardContent className="flex flex-col items-center justify-center py-4">
+                <div className="h-40 w-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Assignments', value: userStats.completedAssignments * 20 },
+                          { name: 'Resources', value: userStats.uploadedResources * 10 },
+                          { name: 'Comments', value: userStats.comments },
+                          { name: 'Logins', value: user?.points ? user.points - (userStats.completedAssignments * 20 + userStats.uploadedResources * 10 + userStats.comments) : 0 }
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={30}
+                        outerRadius={70}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {[...Array(4)].map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={pointsColors[index % pointsColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => [`${value} points`]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 text-center space-y-2">
+                  <p className="text-sm">
+                    Current Rank: <span className="font-medium">{userRank.icon} {userRank.name}</span>
+                  </p>
+                  {user?.points !== undefined && user.points < RANKS[RANKS.length - 1].min_points && (
+                    <p className="text-xs text-muted-foreground">
+                      {RANKS.findIndex(r => r.id === userRank.id) < RANKS.length - 1 ? (
+                        <>
+                          {RANKS[RANKS.findIndex(r => r.id === userRank.id) + 1].min_points - user.points} points until next rank:
+                          <br />
+                          <span className="font-medium">
+                            {RANKS[RANKS.findIndex(r => r.id === userRank.id) + 1].icon} {RANKS[RANKS.findIndex(r => r.id === userRank.id) + 1].name}
+                          </span>
+                        </>
+                      ) : 'Highest rank achieved!'}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
           
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>
-                Your latest actions on the platform
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivity.length > 0 ? (
-                  recentActivity.map((activity, index) => (
-                    <div key={index} className="flex items-start gap-4">
-                      <div className="rounded-full bg-muted p-2">
-                        {activity.type === 'upload' && <Upload className="h-4 w-4" />}
-                        {activity.type === 'complete' && <CheckCircle className="h-4 w-4" />}
-                        {activity.type === 'comment' && <Users className="h-4 w-4" />}
-                        {activity.type === 'login' && <Calendar className="h-4 w-4" />}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{activity.text}</p>
-                        <p className="text-xs text-muted-foreground">{activity.time}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No recent activity available.</p>
+          {/* Recent Activity */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Your Recent Activity</h2>
+            <Tabs defaultValue="completions">
+              <TabsList>
+                <TabsTrigger value="completions" className="flex items-center gap-1">
+                  <UserCheck className="h-4 w-4" /> Completions
+                </TabsTrigger>
+                <TabsTrigger value="comments" className="flex items-center gap-1">
+                  <Info className="h-4 w-4" /> Comments
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="completions" className="mt-4">
+                {activityData.completions.length > 0 ? (
+                  <div className="space-y-4">
+                    {activityData.completions.map((completion, index) => (
+                      <Alert key={index}>
+                        <Calendar className="h-4 w-4" />
+                        <AlertTitle>Completed: {completion.resource.title}</AlertTitle>
+                        <AlertDescription>
+                          {formatDistance(new Date(completion.completed_at), new Date(), { addSuffix: true })}
+                        </AlertDescription>
+                      </Alert>
+                    ))}
                   </div>
+                ) : (
+                  <p className="text-center py-6 text-muted-foreground">
+                    You haven't completed any assignments yet.
+                  </p>
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </TabsContent>
+              <TabsContent value="comments" className="mt-4">
+                {activityData.comments.length > 0 ? (
+                  <div className="space-y-4">
+                    {activityData.comments.map((comment, index) => (
+                      <Alert key={index}>
+                        <Info className="h-4 w-4" />
+                        <AlertTitle>Commented on: {comment.resource.title}</AlertTitle>
+                        <AlertDescription>
+                          {formatDistance(new Date(comment.created_at), new Date(), { addSuffix: true })}
+                        </AlertDescription>
+                      </Alert>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center py-6 text-muted-foreground">
+                    You haven't made any comments yet.
+                  </p>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+          
+          {/* Your Units */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Your Units</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {units.map((unit) => (
+                <Card key={unit.id} className="overflow-hidden">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="text-lg">
+                      <Link to={`/unit/${unit.id}`} className="hover:underline">
+                        {unit.name}
+                      </Link>
+                    </CardTitle>
+                    <CardDescription>{unit.code}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <p className="text-sm">Lecturer: {unit.lecturer}</p>
+                    <div className="mt-4">
+                      <Button asChild size="sm">
+                        <Link to={`/unit/${unit.id}`}>
+                          <BookOpen className="mr-2 h-4 w-4" /> View Unit
+                        </Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </DashboardLayout>
   );
 }

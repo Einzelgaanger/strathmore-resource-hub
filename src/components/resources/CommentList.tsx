@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatDistance } from 'date-fns';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -9,25 +9,96 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 interface CommentListProps {
-  comments: Comment[];
+  comments?: Comment[];
   resourceId: number;
 }
 
-export function CommentList({ comments, resourceId }: CommentListProps) {
+export function CommentList({ comments: initialComments, resourceId }: CommentListProps) {
   const { user } = useAuth();
   const [commentText, setCommentText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [comments, setComments] = useState<Comment[]>(initialComments || []);
+  const [loading, setLoading] = useState(!initialComments);
+  
+  useEffect(() => {
+    const fetchComments = async () => {
+      if (initialComments) {
+        setComments(initialComments);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('comments')
+          .select(`
+            *,
+            user:user_id (
+              id,
+              name,
+              admission_number,
+              profile_picture_url
+            )
+          `)
+          .eq('resource_id', resourceId)
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          throw error;
+        }
+        
+        setComments(data || []);
+      } catch (error) {
+        console.error('Error fetching comments:', error);
+        toast.error('Failed to load comments');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchComments();
+  }, [resourceId, initialComments]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentText.trim()) return;
+    if (!commentText.trim() || !user) return;
     
     setIsSubmitting(true);
     try {
-      // In a real app, this would send the comment to the server
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      // Insert the comment in the database
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          content: commentText,
+          user_id: user.id,
+          resource_id: resourceId
+        })
+        .select(`
+          *,
+          user:user_id (
+            id,
+            name,
+            admission_number,
+            profile_picture_url
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      
+      // Update user points (1 point for commenting)
+      await supabase
+        .from('users')
+        .update({ 
+          points: user.points + 1 
+        })
+        .eq('id', user.id);
+      
+      // Add the new comment to the list
+      setComments([data, ...comments]);
       toast.success('Comment added successfully');
       setCommentText('');
     } catch (error) {
@@ -37,6 +108,14 @@ export function CommentList({ comments, resourceId }: CommentListProps) {
       setIsSubmitting(false);
     }
   };
+  
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-8">
+        <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
   
   return (
     <div className="space-y-4">
