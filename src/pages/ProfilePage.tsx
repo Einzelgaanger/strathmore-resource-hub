@@ -13,7 +13,7 @@ import { RankBadge, getRankFromPoints } from '@/components/ui/rank-badge';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
 
 export default function ProfilePage() {
-  const { user, updateProfile, changePassword } = useAuth();
+  const { user, updateProfile, updatePassword, updateProfilePicture } = useAuth();
   
   const [profilePicture, setProfilePicture] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(user?.profile_picture_url || null);
@@ -69,7 +69,8 @@ export default function ProfilePage() {
     
     setLoading(true);
     try {
-      await changePassword(currentPassword, newPassword);
+      await updatePassword(currentPassword, newPassword);
+      toast.success('Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -90,11 +91,7 @@ export default function ProfilePage() {
     
     setLoading(true);
     try {
-      // In a real app, this would upload the picture to storage
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock a new profile picture URL
-      await updateProfile({ profile_picture_url: previewUrl });
+      await updateProfilePicture(user.id, profilePicture);
       toast.success('Profile picture updated successfully');
     } catch (error) {
       console.error('Failed to update profile picture:', error);

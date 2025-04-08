@@ -1,8 +1,10 @@
+
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { User } from '@/lib/types';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -14,6 +16,8 @@ interface AuthContextType {
   updateResetCode: (userId: string, resetCode: string) => Promise<boolean>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   updateProfilePicture: (userId: string, file: File) => Promise<string>;
+  updateProfile: (userData: Partial<User>) => Promise<boolean>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,6 +30,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Authentication functions
   const login = async (admissionNumber: string, password: string) => {
     try {
+      console.log(`Attempting to login with admission number: ${admissionNumber}`);
+      
       // First check if the user exists in our users table
       const { data: userData, error: userError } = await supabase
         .from('users')
@@ -34,8 +40,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .single();
       
       if (userError) {
+        console.error('User lookup error:', userError);
         throw new Error('Invalid admission number or password');
       }
+      
+      console.log(`Found user with email: ${userData.email}`);
       
       // If the user exists, try to sign in
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -44,6 +53,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
       
       if (error) {
+        console.error('Auth sign in error:', error);
         if (error.message.includes('Invalid login credentials')) {
           throw new Error('Invalid admission number or password');
         }
@@ -58,9 +68,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .single();
       
       if (detailsError) {
+        console.error('User details error:', detailsError);
         throw detailsError;
       }
       
+      console.log('Successfully retrieved user details:', userDetails);
       setUser(userDetails);
       return userDetails;
     } catch (error: any) {
@@ -229,14 +241,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Add updateProfile method for ProfilePage
+  const updateProfile = async (userData: Partial<User>) => {
+    try {
+      if (!user?.id) throw new Error('User ID not found');
+      
+      const { error } = await supabase
+        .from('users')
+        .update(userData)
+        .eq('id', user.id);
+      
+      if (error) throw error;
+      
+      // Update the local user state
+      setUser(prev => prev ? { ...prev, ...userData } : null);
+      
+      toast.success('Profile updated successfully');
+      return true;
+    } catch (error: any) {
+      console.error('Update profile error:', error);
+      toast.error(error.message || 'Failed to update profile');
+      throw new Error(error.message || 'An error occurred while updating profile');
+    }
+  };
+
+  // Add changePassword method as alias to updatePassword for ProfilePage
+  const changePassword = updatePassword;
+
   // Check for user session on initial load and auth state changes
   useEffect(() => {
     const fetchUser = async () => {
       try {
+        console.log('Checking for existing session...');
         // Get the current auth session
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
+          console.log('Found session for user:', session.user.id);
           // Get user details from our users table
           const { data, error } = await supabase
             .from('users')
@@ -245,10 +286,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .single();
           
           if (error) {
+            console.error('Error fetching user details from session:', error);
             throw error;
           }
           
+          console.log('Loaded user details:', data);
           setUser(data);
+        } else {
+          console.log('No active session found');
         }
       } catch (error) {
         console.error('Error fetching user:', error);
@@ -263,7 +308,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event);
         if (session?.user) {
+          console.log('New session detected for user:', session.user.id);
           // Get user details on auth state change
           const { data, error } = await supabase
             .from('users')
@@ -272,9 +319,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .single();
           
           if (!error) {
+            console.log('Updated user details loaded');
             setUser(data);
+          } else {
+            console.error('Error loading user details after auth change:', error);
           }
         } else {
+          console.log('Session ended');
           setUser(null);
         }
         setLoading(false);
@@ -295,7 +346,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     resetPassword,
     updateResetCode,
     updatePassword,
-    updateProfilePicture
+    updateProfilePicture,
+    updateProfile,
+    changePassword
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

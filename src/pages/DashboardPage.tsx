@@ -11,10 +11,26 @@ import { Loader2, Star, UserCheck, BookOpen, Info, Calendar } from 'lucide-react
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Unit, MarketingContent, CompletionWithResource, CommentWithResource } from '@/lib/types';
+import { Unit, MarketingContent, Resource } from '@/lib/types';
 import { RANKS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { formatDistance } from 'date-fns';
+
+interface CompletionWithResource {
+  completed_at: string;
+  resource: {
+    title: string;
+    type: string;
+    created_at: string;
+  };
+}
+
+interface CommentWithResource {
+  created_at: string;
+  resource: {
+    title: string;
+  };
+}
 
 const pointsColors = ['#4C51BF', '#4299E1', '#38B2AC', '#48BB78', '#ECC94B', '#ED8936', '#F56565'];
 
@@ -153,22 +169,28 @@ export default function DashboardPage() {
           lastLogin: user.last_login || null,
         });
         
-        // Set activity data
-        setActivityData({
-          completions: (completionsData || []).map(item => ({
-            ...item,
+        // Set activity data with type safety
+        const typedCompletions: CompletionWithResource[] = completionsData ? 
+          completionsData.map(item => ({
+            completed_at: item.completed_at,
             resource: {
               title: item.resource?.title || 'Unknown',
               type: item.resource?.type || 'assignment',
               created_at: item.resource?.created_at || new Date().toISOString()
             }
-          })) as CompletionWithResource[],
-          comments: (commentsData || []).map(item => ({
-            ...item,
+          })) : [];
+          
+        const typedComments: CommentWithResource[] = commentsData ? 
+          commentsData.map(item => ({
+            created_at: item.created_at,
             resource: {
               title: item.resource?.title || 'Unknown'
             }
-          })) as CommentWithResource[]
+          })) : [];
+        
+        setActivityData({
+          completions: typedCompletions,
+          comments: typedComments
         });
       } catch (error) {
         console.error('Error loading dashboard data:', error);

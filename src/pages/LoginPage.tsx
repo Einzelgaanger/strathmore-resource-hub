@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,29 +19,78 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DEFAULT_PASSWORD } from '@/lib/constants';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function LoginPage() {
   const { login, resetPassword, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('login');
+  const navigate = useNavigate();
   
   // Login form
   const [admissionNumber, setAdmissionNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   
   // Reset password form
   const [resetAdmissionNumber, setResetAdmissionNumber] = useState('');
   const [resetCode, setResetCode] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(admissionNumber, password);
+    setError(null);
+    
+    if (!admissionNumber.trim()) {
+      setError("Please enter your admission number");
+      return;
+    }
+    
+    if (!password.trim()) {
+      setError("Please enter your password");
+      return;
+    }
+    
+    try {
+      console.log(`Login attempt with: ${admissionNumber}`);
+      const user = await login(admissionNumber, password);
+      
+      if (user) {
+        console.log("Login successful, navigating to dashboard");
+        toast.success(`Welcome back, ${user.name}!`);
+        navigate('/dashboard');
+      }
+    } catch (error: any) {
+      console.error("Login failed:", error);
+      setError(error.message || 'Failed to login. Please check your credentials.');
+    }
   };
   
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    await resetPassword(resetAdmissionNumber, resetCode);
+    setResetError(null);
+    
+    if (!resetAdmissionNumber.trim()) {
+      setResetError("Please enter your admission number");
+      return;
+    }
+    
+    if (!resetCode.trim()) {
+      setResetError("Please enter your secret key");
+      return;
+    }
+    
+    try {
+      await resetPassword(resetAdmissionNumber, resetCode);
+      toast.success(`Password has been reset to the default: ${DEFAULT_PASSWORD}`);
+      setResetAdmissionNumber('');
+      setResetCode('');
+      setActiveTab('login');
+    } catch (error: any) {
+      setResetError(error.message || 'Failed to reset password. Please check your details.');
+    }
   };
   
   return (
@@ -62,13 +111,21 @@ export default function LoginPage() {
               </TabsList>
               
               <TabsContent value="login">
+                {error && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Login Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+                
                 <form onSubmit={handleLogin} className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label htmlFor="admission-number">Admission Number</Label>
                     <Input
                       id="admission-number"
                       type="text"
-                      placeholder="e.g. 123456"
+                      placeholder="e.g. 180963"
                       value={admissionNumber}
                       onChange={(e) => setAdmissionNumber(e.target.value)}
                       required
@@ -87,6 +144,9 @@ export default function LoginPage() {
                       placeholder={`Default password: ${DEFAULT_PASSWORD}`}
                       required
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Default password for all users: {DEFAULT_PASSWORD}
+                    </p>
                   </div>
                   
                   <Button 
@@ -105,13 +165,21 @@ export default function LoginPage() {
               </TabsContent>
               
               <TabsContent value="reset">
+                {resetError && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Reset Error</AlertTitle>
+                    <AlertDescription>{resetError}</AlertDescription>
+                  </Alert>
+                )}
+                
                 <form onSubmit={handleResetPassword} className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label htmlFor="reset-admission">Admission Number</Label>
                     <Input
                       id="reset-admission"
                       type="text"
-                      placeholder="e.g. 123456"
+                      placeholder="e.g. 180963"
                       value={resetAdmissionNumber}
                       onChange={(e) => setResetAdmissionNumber(e.target.value)}
                       required
@@ -128,6 +196,9 @@ export default function LoginPage() {
                       onChange={(e) => setResetCode(e.target.value)}
                       required
                     />
+                    <p className="text-xs text-muted-foreground">
+                      If you haven't set a secret key yet, please contact your class admin.
+                    </p>
                   </div>
                   
                   <Button 
@@ -151,6 +222,10 @@ export default function LoginPage() {
               <Link to="/" className="text-strathmore-blue hover:underline">
                 Back to Home
               </Link>
+              <br />
+              <span className="text-xs">
+                Admission numbers: 180963, 190037, 165011, etc. with default password: {DEFAULT_PASSWORD}
+              </span>
             </p>
           </CardFooter>
         </Card>

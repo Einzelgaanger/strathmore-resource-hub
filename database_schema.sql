@@ -66,7 +66,7 @@ CREATE TABLE groups (
   UNIQUE (name, semester_id)
 );
 
--- Create Class Instances Table with Description
+-- Create Class Instances Table
 CREATE TABLE class_instances (
   id SERIAL PRIMARY KEY,
   program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
@@ -221,88 +221,6 @@ BEGIN
   VALUES ('marketing', 'Marketing Content Bucket', TRUE);
 END $$;
 
--- Create Storage Policies
-DO $$
-BEGIN
-  -- Create resources policies
-  DROP POLICY IF EXISTS "Resources Public Read" ON storage.objects;
-  CREATE POLICY "Resources Public Read" ON storage.objects
-    FOR SELECT
-    USING (bucket_id = 'resources');
-  
-  DROP POLICY IF EXISTS "Resources Authenticated Insert" ON storage.objects;
-  CREATE POLICY "Resources Authenticated Insert" ON storage.objects
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (bucket_id = 'resources');
-  
-  DROP POLICY IF EXISTS "Resources Owner Update" ON storage.objects;
-  CREATE POLICY "Resources Owner Update" ON storage.objects
-    FOR UPDATE
-    TO authenticated
-    USING (bucket_id = 'resources' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
-  
-  DROP POLICY IF EXISTS "Resources Owner Delete" ON storage.objects;
-  CREATE POLICY "Resources Owner Delete" ON storage.objects
-    FOR DELETE
-    TO authenticated
-    USING (bucket_id = 'resources' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
-  
-  -- Create profiles policies
-  DROP POLICY IF EXISTS "Profiles Public Read" ON storage.objects;
-  CREATE POLICY "Profiles Public Read" ON storage.objects
-    FOR SELECT
-    USING (bucket_id = 'profiles');
-  
-  DROP POLICY IF EXISTS "Profiles Authenticated Insert" ON storage.objects;
-  CREATE POLICY "Profiles Authenticated Insert" ON storage.objects
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (bucket_id = 'profiles');
-  
-  DROP POLICY IF EXISTS "Profiles Owner Update" ON storage.objects;
-  CREATE POLICY "Profiles Owner Update" ON storage.objects
-    FOR UPDATE
-    TO authenticated
-    USING (bucket_id = 'profiles' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
-  
-  DROP POLICY IF EXISTS "Profiles Owner Delete" ON storage.objects;
-  CREATE POLICY "Profiles Owner Delete" ON storage.objects
-    FOR DELETE
-    TO authenticated
-    USING (bucket_id = 'profiles' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
-  
-  -- Create marketing policies
-  DROP POLICY IF EXISTS "Marketing Public Read" ON storage.objects;
-  CREATE POLICY "Marketing Public Read" ON storage.objects
-    FOR SELECT
-    USING (bucket_id = 'marketing');
-  
-  DROP POLICY IF EXISTS "Marketing Admin Insert" ON storage.objects;
-  CREATE POLICY "Marketing Admin Insert" ON storage.objects
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (bucket_id = 'marketing' AND EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
-    ));
-  
-  DROP POLICY IF EXISTS "Marketing Admin Update" ON storage.objects;
-  CREATE POLICY "Marketing Admin Update" ON storage.objects
-    FOR UPDATE
-    TO authenticated
-    USING (bucket_id = 'marketing' AND EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
-    ));
-  
-  DROP POLICY IF EXISTS "Marketing Admin Delete" ON storage.objects;
-  CREATE POLICY "Marketing Admin Delete" ON storage.objects
-    FOR DELETE
-    TO authenticated
-    USING (bucket_id = 'marketing' AND EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
-    ));
-END $$;
-
 -- Populate Ranks table with predefined ranks
 INSERT INTO ranks (name, icon, min_points, max_points) VALUES
 ('Freshman Scholar', '🔍', 0, 99),
@@ -318,22 +236,7 @@ INSERT INTO ranks (name, icon, min_points, max_points) VALUES
 
 -- Create a super admin user (will be used across all class instances)
 INSERT INTO users (admission_number, email, name, password, is_admin, is_super_admin) 
-VALUES ('ADMIN001', 'admin@example.com', 'System Administrator', 'stratizens#web', TRUE, TRUE);
-
--- Store super admin ID for reference
-DO $$
-DECLARE
-  super_admin_id UUID;
-BEGIN
-  SELECT id INTO super_admin_id FROM users WHERE admission_number = 'ADMIN001';
-
-  -- Create marketing content from super admin
-  INSERT INTO marketing_content (title, content, type, created_by) VALUES
-  ('Welcome to myStrath', 'Welcome to the new resource sharing platform for Strathmore University students. Connect, share, and excel together!', 'text', super_admin_id),
-  ('Upcoming Career Fair', 'Don''t miss the annual career fair next week. Bring your CV and meet potential employers!', 'text', super_admin_id),
-  ('Study Tips for Finals', 'Create a study schedule, take regular breaks, and form study groups for better preparation.', 'quote', super_admin_id),
-  ('Learning Resources Workshop', 'Join us for a workshop on effective study techniques and resource sharing this Friday at 3PM in the Main Auditorium.', 'text', super_admin_id);
-END $$;
+VALUES ('ADMIN001', 'admin@mystrathapp.com', 'System Administrator', 'stratizens#web', TRUE, TRUE);
 
 ------------------------------
 -- CLASS INSTANCE 1: Bachelor's - Statistics and Data Science - Year 2 - Semester 1 - Group A
@@ -347,7 +250,11 @@ DECLARE
   v_group_id INTEGER;
   v_class_instance_id INTEGER;
   v_class_admin_id UUID;
+  v_super_admin_id UUID;
 BEGIN
+  -- Get super admin ID
+  SELECT id INTO v_super_admin_id FROM users WHERE admission_number = 'ADMIN001';
+
   -- Create program
   INSERT INTO programs (name) VALUES ('Bachelor''s') RETURNING id INTO v_program_id;
   
@@ -363,9 +270,23 @@ BEGIN
   -- Create group
   INSERT INTO groups (name, semester_id) VALUES ('Group A', v_semester_id) RETURNING id INTO v_group_id;
   
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Bachelor''s - Statistics and Data Science - Year 2 - Semester 1 - Group A')
+  -- Create class instance
+  INSERT INTO class_instances (
+    program_id, 
+    course_id, 
+    year_id, 
+    semester_id, 
+    group_id,
+    description
+  )
+  VALUES (
+    v_program_id, 
+    v_course_id, 
+    v_year_id, 
+    v_semester_id, 
+    v_group_id,
+    'Bachelor''s - Statistics and Data Science - Year 2 - Semester 1 - Group A'
+  )
   RETURNING id INTO v_class_instance_id;
   
   -- Create class admin
@@ -407,10 +328,13 @@ BEGIN
   ('190046', '190046@strathmore.edu', 'Tyrone Seremani', v_class_instance_id),
   ('190054', '190054@strathmore.edu', 'Gloria Mwihaki', v_class_instance_id),
   ('190055', '190055@strathmore.edu', 'Imani Wairimu', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN1', 'sadmin1@strathmore.edu', 'Super Admin (SDS Y2 S1 GA)', v_class_instance_id, TRUE, TRUE);
+
+  -- Add some marketing content
+  INSERT INTO marketing_content (title, content, type, created_by) VALUES
+  ('Welcome to myStrath', 'Welcome to the new resource sharing platform for Strathmore University students. Connect, share, and excel together!', 'text', v_super_admin_id),
+  ('Upcoming Career Fair', 'Don''t miss the annual career fair next week. Bring your CV and meet potential employers!', 'text', v_super_admin_id),
+  ('Study Tips for Finals', 'Create a study schedule, take regular breaks, and form study groups for better preparation.', 'quote', v_super_admin_id),
+  ('Learning Resources Workshop', 'Join us for a workshop on effective study techniques and resource sharing this Friday at 3PM in the Main Auditorium.', 'text', v_super_admin_id);
 END $$;
 
 ------------------------------
@@ -441,9 +365,23 @@ BEGIN
   -- Create new group
   INSERT INTO groups (name, semester_id) VALUES ('Group B', v_semester_id) RETURNING id INTO v_group_id;
   
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Bachelor''s - Statistics and Data Science - Year 2 - Semester 1 - Group B')
+  -- Create class instance
+  INSERT INTO class_instances (
+    program_id, 
+    course_id, 
+    year_id, 
+    semester_id, 
+    group_id,
+    description
+  )
+  VALUES (
+    v_program_id, 
+    v_course_id, 
+    v_year_id, 
+    v_semester_id, 
+    v_group_id,
+    'Bachelor''s - Statistics and Data Science - Year 2 - Semester 1 - Group B'
+  )
   RETURNING id INTO v_class_instance_id;
   
   -- Create class admin
@@ -485,10 +423,6 @@ BEGIN
   ('189612', '189612@strathmore.edu', 'Ian Muchai', v_class_instance_id),
   ('189778', '189778@strathmore.edu', 'Wenwah Hawala', v_class_instance_id),
   ('190069', '190069@strathmore.edu', 'Janice Muthoki', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN2', 'sadmin2@strathmore.edu', 'Super Admin (SDS Y2 S1 GB)', v_class_instance_id, TRUE, TRUE);
 END $$;
 
 ------------------------------
@@ -519,9 +453,23 @@ BEGIN
   -- Create new group
   INSERT INTO groups (name, semester_id) VALUES ('Group A', v_semester_id) RETURNING id INTO v_group_id;
   
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Bachelor''s - Computer Science - Year 3 - Semester 2 - Group A')
+  -- Create class instance
+  INSERT INTO class_instances (
+    program_id, 
+    course_id, 
+    year_id, 
+    semester_id, 
+    group_id,
+    description
+  )
+  VALUES (
+    v_program_id, 
+    v_course_id, 
+    v_year_id, 
+    v_semester_id, 
+    v_group_id,
+    'Bachelor''s - Computer Science - Year 3 - Semester 2 - Group A'
+  )
   RETURNING id INTO v_class_instance_id;
   
   -- Create class admin (with different admission number to avoid duplicate)
@@ -553,211 +501,6 @@ BEGIN
   ('165008', '165008@strathmore.edu', 'Sophia Anderson', v_class_instance_id),
   ('165009', '165009@strathmore.edu', 'James Martinez', v_class_instance_id),
   ('165010', '165010@strathmore.edu', 'Emma Garcia', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN3', 'sadmin3@strathmore.edu', 'Super Admin (CS Y3 S2 GA)', v_class_instance_id, TRUE, TRUE);
-END $$;
-
-------------------------------
--- CLASS INSTANCE 4: Master's - Data Science - Year 1 - Semester 1 - Group A
-------------------------------
-DO $$
-DECLARE
-  v_program_id INTEGER;
-  v_course_id INTEGER;
-  v_year_id INTEGER;
-  v_semester_id INTEGER;
-  v_group_id INTEGER;
-  v_class_instance_id INTEGER;
-  v_class_admin_id UUID;
-BEGIN
-  -- Create new program
-  INSERT INTO programs (name) VALUES ('Master''s') RETURNING id INTO v_program_id;
-  
-  -- Create new course
-  INSERT INTO courses (name, program_id) VALUES ('Data Science', v_program_id) RETURNING id INTO v_course_id;
-  
-  -- Create new year
-  INSERT INTO years (name, course_id) VALUES ('Year 1', v_course_id) RETURNING id INTO v_year_id;
-  
-  -- Create new semester
-  INSERT INTO semesters (name, year_id) VALUES ('Semester 1', v_year_id) RETURNING id INTO v_semester_id;
-  
-  -- Create new group
-  INSERT INTO groups (name, semester_id) VALUES ('Group A', v_semester_id) RETURNING id INTO v_group_id;
-  
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Master''s - Data Science - Year 1 - Semester 1 - Group A')
-  RETURNING id INTO v_class_instance_id;
-  
-  -- Create class admin
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin)
-  VALUES ('195001', '195001@strathmore.edu', 'Sophia Kumar', v_class_instance_id, TRUE)
-  RETURNING id INTO v_class_admin_id;
-  
-  -- Set admin for class instance
-  UPDATE class_instances SET admin_id = v_class_admin_id WHERE id = v_class_instance_id;
-  
-  -- Add units for this class
-  INSERT INTO units (name, code, class_instance_id, lecturer) VALUES
-  ('Advanced Data Analysis', 'DAT 5101', v_class_instance_id, 'Prof. Lisa Johnson'),
-  ('Big Data Technologies', 'DAT 5102', v_class_instance_id, 'Prof. Richard Smith'),
-  ('Statistical Learning', 'STA 5101', v_class_instance_id, 'Prof. Mary Williams'),
-  ('Data Mining and Knowledge Discovery', 'DAT 5103', v_class_instance_id, 'Prof. Joseph Brown'),
-  ('Research Methods', 'RES 5101', v_class_instance_id, 'Prof. Catherine Lee');
-
-  -- Insert students for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id) VALUES
-  ('195002', '195002@strathmore.edu', 'Raj Patel', v_class_instance_id),
-  ('195003', '195003@strathmore.edu', 'Aisha Mohamed', v_class_instance_id),
-  ('195004', '195004@strathmore.edu', 'Kwame Osei', v_class_instance_id),
-  ('195005', '195005@strathmore.edu', 'Liu Wei', v_class_instance_id),
-  ('195006', '195006@strathmore.edu', 'Isabella Garcia', v_class_instance_id),
-  ('195007', '195007@strathmore.edu', 'Hiroshi Tanaka', v_class_instance_id),
-  ('195008', '195008@strathmore.edu', 'Elena Petrov', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN4', 'sadmin4@strathmore.edu', 'Super Admin (DS MS Y1 S1 GA)', v_class_instance_id, TRUE, TRUE);
-END $$;
-
-------------------------------
--- CLASS INSTANCE 5: Bachelor's - Business Information Technology - Year 1 - Semester 2 - Group C
-------------------------------
-DO $$
-DECLARE
-  v_program_id INTEGER;
-  v_course_id INTEGER;
-  v_year_id INTEGER;
-  v_semester_id INTEGER;
-  v_group_id INTEGER;
-  v_class_instance_id INTEGER;
-  v_class_admin_id UUID;
-BEGIN
-  -- Get existing program
-  SELECT id INTO v_program_id FROM programs WHERE name = 'Bachelor''s';
-  
-  -- Create new course
-  INSERT INTO courses (name, program_id) VALUES ('Business Information Technology', v_program_id) RETURNING id INTO v_course_id;
-  
-  -- Create new year
-  INSERT INTO years (name, course_id) VALUES ('Year 1', v_course_id) RETURNING id INTO v_year_id;
-  
-  -- Create new semester
-  INSERT INTO semesters (name, year_id) VALUES ('Semester 2', v_year_id) RETURNING id INTO v_semester_id;
-  
-  -- Create new group
-  INSERT INTO groups (name, semester_id) VALUES ('Group C', v_semester_id) RETURNING id INTO v_group_id;
-  
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Bachelor''s - Business Information Technology - Year 1 - Semester 2 - Group C')
-  RETURNING id INTO v_class_instance_id;
-  
-  -- Create class admin
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin)
-  VALUES ('192501', '192501@strathmore.edu', 'Brian Mwangi', v_class_instance_id, TRUE)
-  RETURNING id INTO v_class_admin_id;
-  
-  -- Set admin for class instance
-  UPDATE class_instances SET admin_id = v_class_admin_id WHERE id = v_class_instance_id;
-  
-  -- Add units for this class
-  INSERT INTO units (name, code, class_instance_id, lecturer) VALUES
-  ('Introduction to Programming', 'BIT 1201', v_class_instance_id, 'Dr. Peter Karani'),
-  ('Business Communication', 'BIT 1202', v_class_instance_id, 'Dr. Joyce Wanjiku'),
-  ('Introduction to Accounting', 'BIT 1203', v_class_instance_id, 'Dr. Samson Kiprotich'),
-  ('Discrete Mathematics', 'BIT 1204', v_class_instance_id, 'Dr. Mary Wambui'),
-  ('Web Design', 'BIT 1205', v_class_instance_id, 'Dr. James Kamau');
-
-  -- Insert students for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id) VALUES
-  ('192502', '192502@strathmore.edu', 'Kevin Otieno', v_class_instance_id),
-  ('192503', '192503@strathmore.edu', 'Faith Wanjiru', v_class_instance_id),
-  ('192504', '192504@strathmore.edu', 'Dennis Kimani', v_class_instance_id),
-  ('192505', '192505@strathmore.edu', 'Mercy Wambui', v_class_instance_id),
-  ('192506', '192506@strathmore.edu', 'George Maina', v_class_instance_id),
-  ('192507', '192507@strathmore.edu', 'Linda Atieno', v_class_instance_id),
-  ('192508', '192508@strathmore.edu', 'Stephen Kamau', v_class_instance_id),
-  ('192509', '192509@strathmore.edu', 'Esther Muthoni', v_class_instance_id),
-  ('192510', '192510@strathmore.edu', 'Paul Njoroge', v_class_instance_id),
-  ('192511', '192511@strathmore.edu', 'Catherine Njeri', v_class_instance_id),
-  ('192512', '192512@strathmore.edu', 'Patrick Ochieng', v_class_instance_id),
-  ('192513', '192513@strathmore.edu', 'Nancy Wanjiku', v_class_instance_id),
-  ('192514', '192514@strathmore.edu', 'David Mwangi', v_class_instance_id),
-  ('192515', '192515@strathmore.edu', 'Susan Achieng', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN5', 'sadmin5@strathmore.edu', 'Super Admin (BIT Y1 S2 GC)', v_class_instance_id, TRUE, TRUE);
-END $$;
-
-------------------------------
--- CLASS INSTANCE 6: Bachelor's - Law - Year 3 - Semester 1 - Group A
-------------------------------
-DO $$
-DECLARE
-  v_program_id INTEGER;
-  v_course_id INTEGER;
-  v_year_id INTEGER;
-  v_semester_id INTEGER;
-  v_group_id INTEGER;
-  v_class_instance_id INTEGER;
-  v_class_admin_id UUID;
-BEGIN
-  -- Get existing program
-  SELECT id INTO v_program_id FROM programs WHERE name = 'Bachelor''s';
-  
-  -- Create new course
-  INSERT INTO courses (name, program_id) VALUES ('Law', v_program_id) RETURNING id INTO v_course_id;
-  
-  -- Create new year
-  INSERT INTO years (name, course_id) VALUES ('Year 3', v_course_id) RETURNING id INTO v_year_id;
-  
-  -- Create new semester
-  INSERT INTO semesters (name, year_id) VALUES ('Semester 1', v_year_id) RETURNING id INTO v_semester_id;
-  
-  -- Create new group
-  INSERT INTO groups (name, semester_id) VALUES ('Group A', v_semester_id) RETURNING id INTO v_group_id;
-  
-  -- Create class instance with description
-  INSERT INTO class_instances (program_id, course_id, year_id, semester_id, group_id, description)
-  VALUES (v_program_id, v_course_id, v_year_id, v_semester_id, v_group_id, 'Bachelor''s - Law - Year 3 - Semester 1 - Group A')
-  RETURNING id INTO v_class_instance_id;
-  
-  -- Create class admin
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin)
-  VALUES ('153001', '153001@strathmore.edu', 'Martha Kamau', v_class_instance_id, TRUE)
-  RETURNING id INTO v_class_admin_id;
-  
-  -- Set admin for class instance
-  UPDATE class_instances SET admin_id = v_class_admin_id WHERE id = v_class_instance_id;
-  
-  -- Add units for this class
-  INSERT INTO units (name, code, class_instance_id, lecturer) VALUES
-  ('Constitutional Law', 'LAW 3101', v_class_instance_id, 'Prof. James Orengo'),
-  ('Criminal Law', 'LAW 3102', v_class_instance_id, 'Prof. Nancy Baraza'),
-  ('International Human Rights Law', 'LAW 3103', v_class_instance_id, 'Prof. Otiende Amollo'),
-  ('Property Law', 'LAW 3104', v_class_instance_id, 'Prof. Patricia Nyaundi'),
-  ('Legal Research and Writing', 'LAW 3105', v_class_instance_id, 'Prof. Eric Mutua');
-
-  -- Insert students for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id) VALUES
-  ('153002', '153002@strathmore.edu', 'Irene Akinyi', v_class_instance_id),
-  ('153003', '153003@strathmore.edu', 'Joel Karanja', v_class_instance_id),
-  ('153004', '153004@strathmore.edu', 'Lucy Wanjiku', v_class_instance_id),
-  ('153005', '153005@strathmore.edu', 'Brian Omondi', v_class_instance_id),
-  ('153006', '153006@strathmore.edu', 'Diana Wambui', v_class_instance_id),
-  ('153007', '153007@strathmore.edu', 'Kenneth Mwangi', v_class_instance_id),
-  ('153008', '153008@strathmore.edu', 'Winnie Achieng', v_class_instance_id),
-  ('153009', '153009@strathmore.edu', 'Robert Kamau', v_class_instance_id),
-  ('153010', '153010@strathmore.edu', 'Janet Muthoni', v_class_instance_id);
-  
-  -- Create super admin account for this class
-  INSERT INTO users (admission_number, email, name, class_instance_id, is_admin, is_super_admin) 
-  VALUES ('SADMIN6', 'sadmin6@strathmore.edu', 'Super Admin (LAW Y3 S1 GA)', v_class_instance_id, TRUE, TRUE);
 END $$;
 
 -- Enable RLS on all tables
@@ -767,16 +510,19 @@ ALTER TABLE completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE marketing_content ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies for tables
+-- Create and setup RLS policies for tables
 
 -- Users table policies
 CREATE POLICY "Users can view other users in same class" ON users
   FOR SELECT 
-  USING (auth.uid() IN (
-    SELECT id FROM users WHERE class_instance_id = (
-      SELECT class_instance_id FROM users WHERE id = auth.uid()
-    )
-  ) OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE));
+  USING (
+    (auth.uid() IN (
+      SELECT id FROM users WHERE class_instance_id = (
+        SELECT class_instance_id FROM users WHERE id = auth.uid()
+      )
+    )) OR 
+    (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE))
+  );
 
 CREATE POLICY "Users can update their own record" ON users
   FOR UPDATE
@@ -899,3 +645,148 @@ CREATE POLICY "Marketing content can be updated by super admins" ON marketing_co
 CREATE POLICY "Marketing content can be deleted by super admins" ON marketing_content
   FOR DELETE
   USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE));
+
+-- Create storage policies
+DO $$
+BEGIN
+  -- Create resources policies
+  DROP POLICY IF EXISTS "Resources Public Read" ON storage.objects;
+  CREATE POLICY "Resources Public Read" ON storage.objects
+    FOR SELECT
+    USING (bucket_id = 'resources');
+  
+  DROP POLICY IF EXISTS "Resources Authenticated Insert" ON storage.objects;
+  CREATE POLICY "Resources Authenticated Insert" ON storage.objects
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'resources');
+  
+  DROP POLICY IF EXISTS "Resources Owner Update" ON storage.objects;
+  CREATE POLICY "Resources Owner Update" ON storage.objects
+    FOR UPDATE
+    TO authenticated
+    USING (bucket_id = 'resources' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
+  
+  DROP POLICY IF EXISTS "Resources Owner Delete" ON storage.objects;
+  CREATE POLICY "Resources Owner Delete" ON storage.objects
+    FOR DELETE
+    TO authenticated
+    USING (bucket_id = 'resources' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
+  
+  -- Create profiles policies
+  DROP POLICY IF EXISTS "Profiles Public Read" ON storage.objects;
+  CREATE POLICY "Profiles Public Read" ON storage.objects
+    FOR SELECT
+    USING (bucket_id = 'profiles');
+  
+  DROP POLICY IF EXISTS "Profiles Authenticated Insert" ON storage.objects;
+  CREATE POLICY "Profiles Authenticated Insert" ON storage.objects
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'profiles');
+  
+  DROP POLICY IF EXISTS "Profiles Owner Update" ON storage.objects;
+  CREATE POLICY "Profiles Owner Update" ON storage.objects
+    FOR UPDATE
+    TO authenticated
+    USING (bucket_id = 'profiles' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
+  
+  DROP POLICY IF EXISTS "Profiles Owner Delete" ON storage.objects;
+  CREATE POLICY "Profiles Owner Delete" ON storage.objects
+    FOR DELETE
+    TO authenticated
+    USING (bucket_id = 'profiles' AND auth.uid()::text = SPLIT_PART(name, '/', 1));
+  
+  -- Create marketing policies
+  DROP POLICY IF EXISTS "Marketing Public Read" ON storage.objects;
+  CREATE POLICY "Marketing Public Read" ON storage.objects
+    FOR SELECT
+    USING (bucket_id = 'marketing');
+  
+  DROP POLICY IF EXISTS "Marketing Admin Insert" ON storage.objects;
+  CREATE POLICY "Marketing Admin Insert" ON storage.objects
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'marketing' AND EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
+    ));
+  
+  DROP POLICY IF EXISTS "Marketing Admin Update" ON storage.objects;
+  CREATE POLICY "Marketing Admin Update" ON storage.objects
+    FOR UPDATE
+    TO authenticated
+    USING (bucket_id = 'marketing' AND EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
+    ));
+  
+  DROP POLICY IF EXISTS "Marketing Admin Delete" ON storage.objects;
+  CREATE POLICY "Marketing Admin Delete" ON storage.objects
+    FOR DELETE
+    TO authenticated
+    USING (bucket_id = 'marketing' AND EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND is_super_admin = TRUE
+    ));
+END $$;
+
+-- Ensure all auth.users have corresponding entries in our users table
+DO $$
+DECLARE
+  auth_user RECORD;
+BEGIN
+  -- Register auth.users with our users table if they don't exist yet
+  FOR auth_user IN 
+    SELECT au.id, au.email 
+    FROM auth.users au 
+    WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = au.id) 
+  LOOP
+    INSERT INTO users (id, admission_number, email, name)
+    VALUES (
+      auth_user.id,
+      'TEMP' || auth_user.id::text,
+      auth_user.email,
+      'User ' || auth_user.id::text
+    );
+  END LOOP;
+END $$;
+
+-- Create auth hook functions to keep users synchronized with auth.users
+CREATE OR REPLACE FUNCTION public.handle_new_user() 
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, email, name, admission_number)
+  VALUES (new.id, new.email, 'New User', 'TEMP' || new.id);
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Create some initial auth users for testing if they don't exist
+DO $$
+BEGIN
+  -- For each user in our users table, create corresponding auth.user if it doesn't exist
+  EXECUTE 'CREATE EXTENSION IF NOT EXISTS "pgcrypto"';
+  
+  -- This is just for testing and should be removed in production!
+  -- In a real app, users would sign up through the normal auth flow
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = '180963@strathmore.edu') THEN
+    INSERT INTO auth.users (
+      id, 
+      email,
+      encrypted_password,
+      raw_app_meta_data,
+      raw_user_meta_data
+    ) 
+    VALUES (
+      (SELECT id FROM public.users WHERE admission_number = '180963'),
+      '180963@strathmore.edu',
+      crypt('stratizens#web', gen_salt('bf')),
+      '{"provider":"email","providers":["email"]}',
+      '{}'
+    );
+  END IF;
+  
+  -- Add more users the same way as needed
+END $$;
