@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
@@ -184,9 +183,10 @@ function formatTime(ms: number): string {
   return result.trim() || '0s';
 }
 
-// Improved login by admission number function
+// Improved login by admission number function without using Edge Functions
 export const loginByAdmissionNumber = async (admissionNumber: string, password: string) => {
   try {
+    console.log(`Attempting to login with admission number: ${admissionNumber}`);
     console.log(`Attempting direct login with admission number: ${admissionNumber} and bypassing email lookup`);
     
     // First fetch the user's email using admission number
@@ -203,7 +203,7 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     
     console.log(`Found user with email: ${userData.email}, attempting auth login`);
     
-    // Now sign in with email and password
+    // Try to sign in with email and password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: userData.email,
       password: password || 'stratizens#web' // Use provided password or default
@@ -212,17 +212,23 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     if (authError) {
       console.error('Auth login error:', authError);
       
-      // If initial login fails, try to create/update the auth user and try again
-      const { error: updateError } = await supabase.functions.invoke('reset-auth-user', {
-        body: { admission_number: admissionNumber, password: 'stratizens#web' }
+      // Direct authentication failed, we need to add the user to auth system
+      // Since Edge Functions are causing CORS issues, let's try a direct approach
+      
+      // First, check if the user needs to be added to the auth system
+      // We'll try to sign them up
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: 'stratizens#web',
       });
       
-      if (updateError) {
-        console.error('Error resetting auth user:', updateError);
-        throw new Error('Invalid admission number or password');
+      if (signUpError) {
+        console.error('Sign-up error:', signUpError);
+      } else {
+        console.log('User successfully signed up:', signUpData);
       }
       
-      // Try login again after reset
+      // Try login again
       const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
         email: userData.email,
         password: 'stratizens#web'

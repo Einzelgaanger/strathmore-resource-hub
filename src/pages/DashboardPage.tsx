@@ -175,12 +175,13 @@ export default function DashboardPage() {
         if (completionsData) {
           completionsData.forEach((item) => {
             if (item && item.resource && typeof item.resource === 'object') {
+              const resourceObj = item.resource as any;
               processedCompletions.push({
                 completed_at: item.completed_at,
                 resource: {
-                  title: typeof item.resource.title === 'string' ? item.resource.title : 'Unknown',
-                  type: typeof item.resource.type === 'string' ? item.resource.type : 'assignment',
-                  created_at: typeof item.resource.created_at === 'string' ? item.resource.created_at : new Date().toISOString()
+                  title: typeof resourceObj.title === 'string' ? resourceObj.title : 'Unknown',
+                  type: typeof resourceObj.type === 'string' ? resourceObj.type : 'assignment',
+                  created_at: typeof resourceObj.created_at === 'string' ? resourceObj.created_at : new Date().toISOString()
                 }
               });
             }
@@ -192,10 +193,11 @@ export default function DashboardPage() {
         if (commentsData) {
           commentsData.forEach((item) => {
             if (item && item.resource && typeof item.resource === 'object') {
+              const resourceObj = item.resource as any;
               processedComments.push({
                 created_at: item.created_at,
                 resource: {
-                  title: typeof item.resource.title === 'string' ? item.resource.title : 'Unknown'
+                  title: typeof resourceObj.title === 'string' ? resourceObj.title : 'Unknown'
                 }
               });
             }
