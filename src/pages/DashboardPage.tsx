@@ -16,20 +16,21 @@ import { RANKS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { formatDistance } from 'date-fns';
 
+// Define specific interfaces for completion and comment data to fix TypeScript errors
+interface ResourceData {
+  title: string;
+  type?: string;
+  created_at?: string;
+}
+
 interface CompletionWithResource {
   completed_at: string;
-  resource: {
-    title: string;
-    type: string;
-    created_at: string;
-  };
+  resource: ResourceData;
 }
 
 interface CommentWithResource {
   created_at: string;
-  resource: {
-    title: string;
-  };
+  resource: ResourceData;
 }
 
 const pointsColors = ['#4C51BF', '#4299E1', '#38B2AC', '#48BB78', '#ECC94B', '#ED8936', '#F56565'];
@@ -169,7 +170,7 @@ export default function DashboardPage() {
           lastLogin: user.last_login || null,
         });
         
-        // Process completions data
+        // Process completions data - fix TypeScript errors by handling each item correctly
         const processedCompletions: CompletionWithResource[] = [];
         if (completionsData) {
           completionsData.forEach((item) => {
@@ -186,7 +187,7 @@ export default function DashboardPage() {
           });
         }
         
-        // Process comments data
+        // Process comments data - fix TypeScript errors by handling each item correctly
         const processedComments: CommentWithResource[] = [];
         if (commentsData) {
           commentsData.forEach((item) => {

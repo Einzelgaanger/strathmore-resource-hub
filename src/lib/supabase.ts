@@ -131,7 +131,7 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
       const resource = completion.resource;
       
       if (resource && resource.created_at) {
-        // Each item in the array has its own created_at property
+        // Each completion has its resource object with own created_at property
         const resourceCreatedAt = new Date(resource.created_at);
         const completedAt = new Date(completion.completed_at);
         const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
@@ -184,7 +184,7 @@ function formatTime(ms: number): string {
   return result.trim() || '0s';
 }
 
-// Log user in by admission number
+// Improved login by admission number function
 export const loginByAdmissionNumber = async (admissionNumber: string, password: string) => {
   try {
     console.log(`Attempting direct login with admission number: ${admissionNumber} and bypassing email lookup`);
@@ -201,6 +201,8 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
       throw new Error('Invalid admission number or password');
     }
     
+    console.log(`Found user with email: ${userData.email}, attempting auth login`);
+    
     // Now sign in with email and password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: userData.email,
@@ -211,6 +213,8 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
       console.error('Auth login error:', authError);
       throw new Error('Invalid admission number or password');
     }
+    
+    console.log('Auth login successful, fetching user details');
     
     // Get the user details
     const { data: userDetails, error: detailsError } = await supabase
@@ -224,6 +228,7 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
       throw detailsError;
     }
     
+    console.log('Successfully retrieved user details:', userDetails);
     return userDetails;
   } catch (error: any) {
     console.error('Login by admission error:', error);
