@@ -7,25 +7,6 @@ CREATE POLICY "Users can view other users in same class" ON users
   FOR SELECT 
   USING (true);  -- Allow all users to be visible for now
 
--- Create auth hook function to avoid duplicate key errors
-CREATE OR REPLACE FUNCTION public.handle_new_user() 
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Check if user already exists in public.users before inserting
-  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = NEW.id) THEN
-    INSERT INTO public.users (id, email, name, admission_number)
-    VALUES (NEW.id, NEW.email, 'New User', 'TEMP' || NEW.id);
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create the trigger
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
 -- Create auth users for the admission numbers in our system if they don't exist
 DO $$
 DECLARE

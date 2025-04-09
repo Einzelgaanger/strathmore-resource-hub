@@ -169,28 +169,41 @@ export default function DashboardPage() {
           lastLogin: user.last_login || null,
         });
         
-        // Set activity data with type safety
-        const typedCompletions: CompletionWithResource[] = completionsData ? 
-          completionsData.map(item => ({
-            completed_at: item.completed_at,
-            resource: {
-              title: item.resource?.title || 'Unknown',
-              type: item.resource?.type || 'assignment',
-              created_at: item.resource?.created_at || new Date().toISOString()
+        // Process completions data
+        const processedCompletions: CompletionWithResource[] = [];
+        if (completionsData) {
+          completionsData.forEach((item) => {
+            if (item && item.resource) {
+              processedCompletions.push({
+                completed_at: item.completed_at,
+                resource: {
+                  title: item.resource.title || 'Unknown',
+                  type: item.resource.type || 'assignment',
+                  created_at: item.resource.created_at || new Date().toISOString()
+                }
+              });
             }
-          })) : [];
-          
-        const typedComments: CommentWithResource[] = commentsData ? 
-          commentsData.map(item => ({
-            created_at: item.created_at,
-            resource: {
-              title: item.resource?.title || 'Unknown'
+          });
+        }
+        
+        // Process comments data
+        const processedComments: CommentWithResource[] = [];
+        if (commentsData) {
+          commentsData.forEach((item) => {
+            if (item && item.resource) {
+              processedComments.push({
+                created_at: item.created_at,
+                resource: {
+                  title: item.resource.title || 'Unknown'
+                }
+              });
             }
-          })) : [];
+          });
+        }
         
         setActivityData({
-          completions: typedCompletions,
-          comments: typedComments
+          completions: processedCompletions,
+          comments: processedComments
         });
       } catch (error) {
         console.error('Error loading dashboard data:', error);

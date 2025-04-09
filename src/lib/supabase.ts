@@ -128,9 +128,11 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
   if (data) {
     data.forEach(completion => {
       const userId = completion.user_id;
-      if (completion.resource && completion.resource.created_at) {
+      const resource = completion.resource;
+      
+      if (resource && resource.created_at) {
         // Each item in the array has its own created_at property
-        const resourceCreatedAt = new Date(completion.resource.created_at);
+        const resourceCreatedAt = new Date(resource.created_at);
         const completedAt = new Date(completion.completed_at);
         const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
         
@@ -187,14 +189,26 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
   try {
     console.log(`Attempting direct login with admission number: ${admissionNumber} and bypassing email lookup`);
     
-    // Direct query without using email
-    const { data: userData, error: userError } = await supabase.auth.signInWithPassword({
-      email: `${admissionNumber}@strathmore.edu`,
+    // First fetch the user's email using admission number
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('admission_number', admissionNumber)
+      .single();
+    
+    if (userError || !userData) {
+      console.error('User lookup error:', userError);
+      throw new Error('Invalid admission number or password');
+    }
+    
+    // Now sign in with email and password
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: userData.email,
       password
     });
     
-    if (userError) {
-      console.error('Auth login error:', userError);
+    if (authError) {
+      console.error('Auth login error:', authError);
       throw new Error('Invalid admission number or password');
     }
     
