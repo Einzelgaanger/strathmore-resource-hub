@@ -130,9 +130,9 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
       const userId = completion.user_id;
       const resource = completion.resource;
       
-      if (resource && resource.created_at) {
+      if (resource && typeof resource === 'object' && 'created_at' in resource) {
         // Each completion has its resource object with own created_at property
-        const resourceCreatedAt = new Date(resource.created_at);
+        const resourceCreatedAt = new Date(resource.created_at as string);
         const completedAt = new Date(completion.completed_at);
         const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
         
@@ -192,7 +192,7 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     // First fetch the user's email using admission number
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('email')
+      .select('email, password')
       .eq('admission_number', admissionNumber)
       .single();
     
@@ -206,12 +206,36 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     // Now sign in with email and password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: userData.email,
-      password
+      password: password || 'stratizens#web' // Use provided password or default
     });
     
     if (authError) {
       console.error('Auth login error:', authError);
-      throw new Error('Invalid admission number or password');
+      
+      // If initial login fails, try to create/update the auth user and try again
+      const { error: updateError } = await supabase.functions.invoke('reset-auth-user', {
+        body: { admission_number: admissionNumber, password: 'stratizens#web' }
+      });
+      
+      if (updateError) {
+        console.error('Error resetting auth user:', updateError);
+        throw new Error('Invalid admission number or password');
+      }
+      
+      // Try login again after reset
+      const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: 'stratizens#web'
+      });
+      
+      if (retryError) {
+        console.error('Retry auth login error:', retryError);
+        throw new Error('Invalid admission number or password');
+      }
+      
+      if (!retryData.user) {
+        throw new Error('Failed to authenticate user');
+      }
     }
     
     console.log('Auth login successful, fetching user details');

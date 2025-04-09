@@ -170,32 +170,32 @@ export default function DashboardPage() {
           lastLogin: user.last_login || null,
         });
         
-        // Process completions data - fix TypeScript errors by handling each item correctly
+        // Process completions data with proper type safety
         const processedCompletions: CompletionWithResource[] = [];
         if (completionsData) {
           completionsData.forEach((item) => {
-            if (item && item.resource) {
+            if (item && item.resource && typeof item.resource === 'object') {
               processedCompletions.push({
                 completed_at: item.completed_at,
                 resource: {
-                  title: item.resource.title || 'Unknown',
-                  type: item.resource.type || 'assignment',
-                  created_at: item.resource.created_at || new Date().toISOString()
+                  title: typeof item.resource.title === 'string' ? item.resource.title : 'Unknown',
+                  type: typeof item.resource.type === 'string' ? item.resource.type : 'assignment',
+                  created_at: typeof item.resource.created_at === 'string' ? item.resource.created_at : new Date().toISOString()
                 }
               });
             }
           });
         }
         
-        // Process comments data - fix TypeScript errors by handling each item correctly
+        // Process comments data with proper type safety
         const processedComments: CommentWithResource[] = [];
         if (commentsData) {
           commentsData.forEach((item) => {
-            if (item && item.resource) {
+            if (item && item.resource && typeof item.resource === 'object') {
               processedComments.push({
                 created_at: item.created_at,
                 resource: {
-                  title: item.resource.title || 'Unknown'
+                  title: typeof item.resource.title === 'string' ? item.resource.title : 'Unknown'
                 }
               });
             }
