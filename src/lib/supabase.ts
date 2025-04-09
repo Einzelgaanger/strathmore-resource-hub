@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
-// Use environment variables with fallbacks for development
+// Use hardcoded values since environment variables are not working properly
 const supabaseUrl = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
 
@@ -129,6 +129,7 @@ export const getStudentRankingsForUnit = async (unitId: number) => {
     data.forEach(completion => {
       const userId = completion.user_id;
       if (completion.resource && completion.resource.created_at) {
+        // Each item in the array has its own created_at property
         const resourceCreatedAt = new Date(completion.resource.created_at);
         const completedAt = new Date(completion.completed_at);
         const timeDiffMs = completedAt.getTime() - resourceCreatedAt.getTime();
@@ -180,3 +181,38 @@ function formatTime(ms: number): string {
   
   return result.trim() || '0s';
 }
+
+// Log user in by admission number
+export const loginByAdmissionNumber = async (admissionNumber: string, password: string) => {
+  try {
+    console.log(`Attempting direct login with admission number: ${admissionNumber} and bypassing email lookup`);
+    
+    // Direct query without using email
+    const { data: userData, error: userError } = await supabase.auth.signInWithPassword({
+      email: `${admissionNumber}@strathmore.edu`,
+      password
+    });
+    
+    if (userError) {
+      console.error('Auth login error:', userError);
+      throw new Error('Invalid admission number or password');
+    }
+    
+    // Get the user details
+    const { data: userDetails, error: detailsError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('admission_number', admissionNumber)
+      .single();
+    
+    if (detailsError) {
+      console.error('User details error:', detailsError);
+      throw detailsError;
+    }
+    
+    return userDetails;
+  } catch (error: any) {
+    console.error('Login by admission error:', error);
+    throw error;
+  }
+};

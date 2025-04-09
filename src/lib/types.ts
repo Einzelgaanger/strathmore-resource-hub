@@ -101,6 +101,7 @@ export interface CompletionWithResource extends Completion {
   resource: {
     title: string;
     type: string;
+    unit_id: number;
     created_at: string;
   };
 }

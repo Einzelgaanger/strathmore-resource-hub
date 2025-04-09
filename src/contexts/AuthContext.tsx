@@ -1,7 +1,7 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase, loginByAdmissionNumber } from '@/lib/supabase';
 import { User } from '@/lib/types';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
 import { toast } from 'sonner';
@@ -32,45 +32,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       console.log(`Attempting to login with admission number: ${admissionNumber}`);
       
-      // First check if the user exists in our users table
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('email')
-        .eq('admission_number', admissionNumber)
-        .single();
-      
-      if (userError) {
-        console.error('User lookup error:', userError);
-        throw new Error('Invalid admission number or password');
-      }
-      
-      console.log(`Found user with email: ${userData.email}`);
-      
-      // If the user exists, try to sign in
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: password
-      });
-      
-      if (error) {
-        console.error('Auth sign in error:', error);
-        if (error.message.includes('Invalid login credentials')) {
-          throw new Error('Invalid admission number or password');
-        }
-        throw error;
-      }
-      
-      // Get the user details from our users table
-      const { data: userDetails, error: detailsError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', userData.email)
-        .single();
-      
-      if (detailsError) {
-        console.error('User details error:', detailsError);
-        throw detailsError;
-      }
+      // Use the simplified login function from supabase.ts
+      const userDetails = await loginByAdmissionNumber(admissionNumber, password);
       
       console.log('Successfully retrieved user details:', userDetails);
       setUser(userDetails);
@@ -335,7 +298,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   const value = {
     user,
