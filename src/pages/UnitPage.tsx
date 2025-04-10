@@ -150,21 +150,47 @@ export default function UnitPage() {
       // Upload file if present
       let fileUrl = null;
       if (resourceFile) {
-        const fileName = `${user.id}/${Date.now()}_${resourceFile.name}`;
-        const { data: fileData, error: fileError } = await supabase.storage
-          .from('resources')
-          .upload(fileName, resourceFile);
+        const filePath = `${user.id}/${Date.now()}_${resourceFile.name}`;
         
-        if (fileError) {
-          throw fileError;
+        try {
+          // Using upload method without owner_id
+          const { data: fileData, error: fileError } = await supabase.storage
+            .from('resources')
+            .upload(filePath, resourceFile, {
+              cacheControl: '3600',
+              upsert: false
+            });
+          
+          if (fileError) throw fileError;
+          
+          // Get public URL for the file
+          const { data: urlData } = await supabase.storage
+            .from('resources')
+            .getPublicUrl(filePath);
+          
+          fileUrl = urlData.publicUrl;
+        } catch (uploadError: any) {
+          console.error('Upload error:', uploadError);
+          
+          // Try an alternative approach if the first one failed
+          if (uploadError.message && uploadError.message.includes('owner_id')) {
+            // Fallback to direct upload without owner_id
+            const { data: fileData, error: fileError } = await supabase.storage
+              .from('resources')
+              .upload(filePath, resourceFile);
+            
+            if (fileError) throw fileError;
+            
+            // Get public URL for the file
+            const { data: urlData } = await supabase.storage
+              .from('resources')
+              .getPublicUrl(filePath);
+            
+            fileUrl = urlData.publicUrl;
+          } else {
+            throw uploadError;
+          }
         }
-        
-        // Get public URL for the file
-        const { data: urlData } = await supabase.storage
-          .from('resources')
-          .getPublicUrl(fileName);
-        
-        fileUrl = urlData.publicUrl;
       }
       
       // Create resource record
