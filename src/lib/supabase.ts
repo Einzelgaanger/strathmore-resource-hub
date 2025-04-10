@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
@@ -37,6 +36,56 @@ export const getUserDetails = async (userId: string) => {
   }
   
   return data;
+};
+
+// Helper function for file uploads that works around storage issues
+export const uploadFile = async (bucketName: string, filePath: string, file: File) => {
+  try {
+    console.log(`Attempting to upload file to ${bucketName}/${filePath}`);
+    
+    // Try the simple upload first
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, file, {
+        upsert: false,
+        contentType: file.type
+      });
+    
+    if (error) {
+      console.error('Standard upload failed:', error);
+      
+      // Try with public path prefix
+      const publicPath = `public/${filePath}`;
+      console.log('Trying with public path:', publicPath);
+      
+      const { data: publicData, error: publicError } = await supabase.storage
+        .from(bucketName)
+        .upload(publicPath, file, {
+          upsert: false,
+          contentType: file.type
+        });
+      
+      if (publicError) {
+        console.error('Public path upload failed:', publicError);
+        throw publicError;
+      }
+      
+      const { data: urlData } = await supabase.storage
+        .from(bucketName)
+        .getPublicUrl(publicPath);
+      
+      return { path: publicPath, url: urlData.publicUrl };
+    }
+    
+    const { data: urlData } = await supabase.storage
+      .from(bucketName)
+      .getPublicUrl(filePath);
+    
+    return { path: filePath, url: urlData.publicUrl };
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
+  }
 };
 
 // Helper function to get units for a specific class instance
@@ -240,4 +289,3 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     throw error;
   }
 };
-

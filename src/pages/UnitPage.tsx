@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -51,7 +50,6 @@ export default function UnitPage() {
       if (!unitId || !user) return;
       
       try {
-        // Fetch unit details
         const { data: unitData, error: unitError } = await supabase
           .from('units')
           .select('*')
@@ -66,7 +64,6 @@ export default function UnitPage() {
         
         setUnit(unitData);
         
-        // Fetch completions
         const { data: completions, error: completionsError } = await supabase
           .from('completions')
           .select('resource_id')
@@ -76,23 +73,16 @@ export default function UnitPage() {
           setCompletedResourceIds(completions.map(c => c.resource_id));
         }
         
-        // Fetch assignments
         const assignments = await getResourcesForUnit(parseInt(unitId), 'assignment');
-        
-        // Fetch notes
         const notes = await getResourcesForUnit(parseInt(unitId), 'note');
-        
-        // Fetch past papers
         const pastPapers = await getResourcesForUnit(parseInt(unitId), 'past_paper');
         
-        // Update resources
         setResources({
           assignments,
           notes,
           past_papers: pastPapers
         });
         
-        // Extract creators
         const creatorsMap: Record<string, User> = {};
         [...assignments, ...notes, ...pastPapers].forEach(resource => {
           if (resource.user) {
@@ -101,7 +91,6 @@ export default function UnitPage() {
         });
         setCreators(creatorsMap);
         
-        // Fetch student rankings
         const rankings = await getStudentRankingsForUnit(parseInt(unitId));
         setStudentRankings(rankings);
       } catch (error) {
@@ -138,7 +127,6 @@ export default function UnitPage() {
       return;
     }
 
-    // For notes and past papers, a file is required
     if ((resourceType === 'note' || resourceType === 'past_paper') && !resourceFile) {
       toast.error('Please upload a file for this resource type');
       return;
@@ -147,53 +135,35 @@ export default function UnitPage() {
     try {
       setUploading(true);
       
-      // Upload file if present
       let fileUrl = null;
       if (resourceFile) {
-        const filePath = `${user.id}/${Date.now()}_${resourceFile.name}`;
+        const filePath = `public/${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`;
         
         try {
-          // Using upload method without owner_id
           const { data: fileData, error: fileError } = await supabase.storage
             .from('resources')
-            .upload(filePath, resourceFile, {
-              cacheControl: '3600',
-              upsert: false
-            });
+            .upload(filePath, resourceFile);
           
-          if (fileError) throw fileError;
+          if (fileError) {
+            console.error('Upload error:', fileError);
+            throw fileError;
+          }
           
-          // Get public URL for the file
           const { data: urlData } = await supabase.storage
             .from('resources')
             .getPublicUrl(filePath);
           
           fileUrl = urlData.publicUrl;
+          console.log('File uploaded successfully:', fileUrl);
         } catch (uploadError: any) {
-          console.error('Upload error:', uploadError);
-          
-          // Try an alternative approach if the first one failed
-          if (uploadError.message && uploadError.message.includes('owner_id')) {
-            // Fallback to direct upload without owner_id
-            const { data: fileData, error: fileError } = await supabase.storage
-              .from('resources')
-              .upload(filePath, resourceFile);
-            
-            if (fileError) throw fileError;
-            
-            // Get public URL for the file
-            const { data: urlData } = await supabase.storage
-              .from('resources')
-              .getPublicUrl(filePath);
-            
-            fileUrl = urlData.publicUrl;
-          } else {
-            throw uploadError;
-          }
+          console.error('Upload error details:', uploadError);
+          toast.error(`Upload failed: ${uploadError.message || 'Unknown error'}`);
+          throw uploadError;
         }
       }
       
-      // Create resource record
+      console.log('Creating resource record with file URL:', fileUrl);
+      
       const { data: resource, error: resourceError } = await supabase
         .from('resources')
         .insert({
@@ -209,12 +179,12 @@ export default function UnitPage() {
         .single();
       
       if (resourceError) {
+        console.error('Resource creation error:', resourceError);
         throw resourceError;
       }
       
       toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
       
-      // Add points for the user based on resource type
       let pointsToAdd = 0;
       switch(resourceType) {
         case 'note':
@@ -237,7 +207,6 @@ export default function UnitPage() {
           .eq('id', user.id);
       }
       
-      // Refresh the page data
       window.location.reload();
       
     } catch (error) {
@@ -253,7 +222,6 @@ export default function UnitPage() {
     if (!user) return;
     
     try {
-      // Record completion
       const { error } = await supabase
         .from('completions')
         .insert({
@@ -264,7 +232,6 @@ export default function UnitPage() {
       
       if (error) throw error;
       
-      // Update points (20 points for completing assignment)
       await supabase
         .from('users')
         .update({ 
@@ -272,7 +239,6 @@ export default function UnitPage() {
         })
         .eq('id', user.id);
       
-      // Update local state
       setCompletedResourceIds([...completedResourceIds, resourceId]);
       
       toast.success('Assignment marked as complete!');
@@ -291,7 +257,6 @@ export default function UnitPage() {
       
       if (error) throw error;
       
-      // Filter out the deleted resource from the local state
       setResources({
         assignments: resources.assignments.filter(r => r.id !== resourceId),
         notes: resources.notes.filter(r => r.id !== resourceId),
