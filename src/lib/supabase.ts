@@ -39,12 +39,16 @@ export const getUserDetails = async (userId: string) => {
   return data;
 };
 
-// Robust helper function for file uploads with multiple fallback strategies
+// Simplified and more robust file upload function with multiple fallback strategies
 export const uploadFile = async (bucketName: string, filePath: string, file: File) => {
   try {
     console.log(`Attempting to upload file to ${bucketName}/${filePath}`);
     
-    // Try standard upload first
+    // Try standard upload to public folder first
+    if (!filePath.startsWith('public/')) {
+      filePath = `public/${filePath}`;
+    }
+    
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(bucketName)
       .upload(filePath, file, {
@@ -55,67 +59,76 @@ export const uploadFile = async (bucketName: string, filePath: string, file: Fil
     if (uploadError) {
       console.error('Standard upload failed:', uploadError);
       
-      // Try with public/ prefix
-      const publicPath = `public/${filePath}`;
-      console.log('Trying with public path:', publicPath);
-      
-      const { data: publicData, error: publicError } = await supabase.storage
-        .from(bucketName)
-        .upload(publicPath, file, {
-          upsert: true,
-          contentType: file.type
-        });
-      
-      if (publicError) {
-        console.error('Public path upload failed:', publicError);
+      // Try with direct API call
+      try {
+        console.log('Trying alternative upload method with direct REST API call');
         
-        // One more attempt - try direct insert to create a signed URL instead
+        // Create a FormData object
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // Create a direct fetch request to Supabase Storage API
+        const response = await fetch(
+          `${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, 
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseAnonKey}`
+            },
+            body: formData
+          }
+        );
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        const signedUrl = result.signedURL || '';
+        
+        return { 
+          path: filePath, 
+          url: signedUrl || `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`
+        };
+      } catch (fallbackError) {
+        // Try one more approach - anonymous public upload
         try {
-          console.log('Trying alternative upload method with direct REST API call');
+          console.log('Trying public anonymous upload...');
           
-          // Create a FormData object
           const formData = new FormData();
           formData.append('file', file);
           
-          // Create a direct fetch request to Supabase Storage API
           const response = await fetch(
-            `${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, 
+            `${supabaseUrl}/storage/v1/object/${bucketName}/public/${file.name}`,
             {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${supabaseAnonKey}`
+                'apikey': supabaseAnonKey,
               },
               body: formData
             }
           );
           
           if (!response.ok) {
-            throw new Error(`Upload failed with status: ${response.status}`);
+            throw new Error(`Public upload failed with status: ${response.status}`);
           }
           
-          const result = await response.json();
-          const signedUrl = result.signedURL || '';
-          
-          return { 
-            path: filePath, 
-            url: signedUrl || `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`
+          return {
+            path: `public/${file.name}`,
+            url: `${supabaseUrl}/storage/v1/object/public/${bucketName}/public/${file.name}`
           };
-        } catch (fallbackError) {
-          console.error('All upload attempts failed:', fallbackError);
-          throw fallbackError;
+        } catch (publicUploadError) {
+          console.error('All upload attempts failed:', publicUploadError);
+          throw publicUploadError;
         }
       }
-      
-      const { data: urlData } = await supabase.storage
-        .from(bucketName)
-        .getPublicUrl(publicPath);
-      
-      return { path: publicPath, url: urlData.publicUrl };
     }
     
     const { data: urlData } = await supabase.storage
       .from(bucketName)
       .getPublicUrl(filePath);
+    
+    console.log('File uploaded successfully:', urlData.publicUrl);
     
     return { path: filePath, url: urlData.publicUrl };
   } catch (error) {

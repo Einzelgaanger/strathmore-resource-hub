@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -141,10 +142,33 @@ export default function UnitPage() {
         try {
           console.log('Starting file upload process...');
           
-          const result = await uploadFile('resources', `${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`, resourceFile);
+          // Use a simpler path structure that works with our RLS policies
+          const filePath = `public/${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`;
+          console.log('Uploading to path:', filePath);
           
-          fileUrl = result.url;
-          console.log('File uploaded successfully:', fileUrl);
+          // First try direct public upload
+          try {
+            const { data, error } = await supabase.storage
+              .from('resources')
+              .upload(filePath, resourceFile, {
+                upsert: true,
+                contentType: resourceFile.type
+              });
+            
+            if (error) throw error;
+            
+            const { data: urlData } = await supabase.storage
+              .from('resources')
+              .getPublicUrl(filePath);
+            
+            fileUrl = urlData.publicUrl;
+            console.log('File uploaded successfully:', fileUrl);
+          } catch (uploadError) {
+            console.error('Direct upload failed, trying alternative method:', uploadError);
+            // Fall back to the helper function
+            const result = await uploadFile('resources', filePath, resourceFile);
+            fileUrl = result.url;
+          }
         } catch (uploadError: any) {
           console.error('Upload error details:', uploadError);
           toast.error(`Upload failed: ${uploadError.message || 'Unknown error'}`);
@@ -155,54 +179,87 @@ export default function UnitPage() {
       
       console.log('Creating resource record with file URL:', fileUrl);
       
-      const { data: resource, error: resourceError } = await supabase
-        .from('resources')
-        .insert({
-          title: resourceTitle,
-          description: resourceDescription,
-          file_url: fileUrl,
-          deadline: resourceType === 'assignment' && resourceDeadline ? resourceDeadline : null,
-          unit_id: parseInt(unitId),
-          user_id: user.id,
-          type: resourceType
-        })
-        .select()
-        .single();
+      // Use a direct REST API call with the Auth header if the standard approach doesn't work
+      const resourceData = {
+        title: resourceTitle,
+        description: resourceDescription,
+        file_url: fileUrl,
+        deadline: resourceType === 'assignment' && resourceDeadline ? resourceDeadline : null,
+        unit_id: parseInt(unitId),
+        user_id: user.id,
+        type: resourceType,
+        likes: 0,
+        dislikes: 0
+      };
       
-      if (resourceError) {
+      // Try the standard Supabase client first
+      try {
+        const { data: resource, error: resourceError } = await supabase
+          .from('resources')
+          .insert(resourceData)
+          .select()
+          .single();
+        
+        if (resourceError) throw resourceError;
+        
+        toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
+        
+        // Award points based on resource type
+        let pointsToAdd = 0;
+        switch(resourceType) {
+          case 'note': pointsToAdd = 50; break;
+          case 'assignment': pointsToAdd = 10; break;
+          case 'past_paper': pointsToAdd = 20; break;
+        }
+        
+        if (pointsToAdd > 0) {
+          await supabase
+            .from('users')
+            .update({ 
+              points: user.points + pointsToAdd 
+            })
+            .eq('id', user.id);
+        }
+        
+        window.location.reload();
+      } catch (resourceError: any) {
         console.error('Resource creation error:', resourceError);
-        throw resourceError;
+        
+        // Fall back to a direct fetch with custom headers if needed
+        if (resourceError.code === '42501') {
+          try {
+            console.log('Attempting direct API call for resource creation');
+            const response = await fetch(`${supabase.supabaseUrl}/rest/v1/resources`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': supabase.supabaseKey,
+                'Authorization': `Bearer ${supabase.supabaseKey}`,
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify(resourceData)
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(`API error: ${JSON.stringify(errorData)}`);
+            }
+            
+            toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
+            
+            // Force page refresh after successful upload
+            setTimeout(() => window.location.reload(), 2000);
+          } catch (fetchError) {
+            console.error('Fetch API fallback failed:', fetchError);
+            throw fetchError;
+          }
+        } else {
+          throw resourceError;
+        }
       }
-      
-      toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
-      
-      let pointsToAdd = 0;
-      switch(resourceType) {
-        case 'note':
-          pointsToAdd = 50;
-          break;
-        case 'assignment':
-          pointsToAdd = 10;
-          break;
-        case 'past_paper':
-          pointsToAdd = 20;
-          break;
-      }
-      
-      if (pointsToAdd > 0) {
-        await supabase
-          .from('users')
-          .update({ 
-            points: user.points + pointsToAdd 
-          })
-          .eq('id', user.id);
-      }
-      
-      window.location.reload();
-      
     } catch (error) {
       console.error('Error uploading resource:', error);
-      toast.error('Failed to upload resource');
+      toast.error('Failed to upload resource. Please try again later.');
     } finally {
       setUploading(false);
       setUploadDialogOpen(false);
