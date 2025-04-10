@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import { supabase, getResourcesForUnit, getStudentRankingsForUnit } from '@/lib/supabase';
+import { supabase, getResourcesForUnit, getStudentRankingsForUnit, uploadFile } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -134,31 +134,22 @@ export default function UnitPage() {
     
     try {
       setUploading(true);
+      toast.info('Uploading your resource, please wait...');
       
       let fileUrl = null;
       if (resourceFile) {
-        const filePath = `public/${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`;
-        
         try {
-          const { data: fileData, error: fileError } = await supabase.storage
-            .from('resources')
-            .upload(filePath, resourceFile);
+          console.log('Starting file upload process...');
           
-          if (fileError) {
-            console.error('Upload error:', fileError);
-            throw fileError;
-          }
+          const result = await uploadFile('resources', `${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`, resourceFile);
           
-          const { data: urlData } = await supabase.storage
-            .from('resources')
-            .getPublicUrl(filePath);
-          
-          fileUrl = urlData.publicUrl;
+          fileUrl = result.url;
           console.log('File uploaded successfully:', fileUrl);
         } catch (uploadError: any) {
           console.error('Upload error details:', uploadError);
           toast.error(`Upload failed: ${uploadError.message || 'Unknown error'}`);
-          throw uploadError;
+          setUploading(false);
+          return;
         }
       }
       

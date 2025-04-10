@@ -1,5 +1,5 @@
 
--- Update storage.objects table to include owner_id and user_metadata columns
+-- Update storage.objects table to include owner_id, user_metadata, and version columns
 DO $$
 BEGIN
   -- Check if the owner_id column already exists
@@ -27,5 +27,17 @@ BEGIN
   ) THEN
     -- Add user_metadata column to storage.objects
     ALTER TABLE storage.objects ADD COLUMN user_metadata JSONB DEFAULT '{}'::jsonb;
+  END IF;
+  
+  -- Check if the version column already exists
+  IF NOT EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'storage' 
+    AND table_name = 'objects' 
+    AND column_name = 'version'
+  ) THEN
+    -- Add version column to storage.objects
+    ALTER TABLE storage.objects ADD COLUMN version TEXT;
   END IF;
 END $$;
