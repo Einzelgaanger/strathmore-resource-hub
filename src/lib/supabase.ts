@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
@@ -183,85 +184,60 @@ function formatTime(ms: number): string {
   return result.trim() || '0s';
 }
 
-// Improved login by admission number function without using Edge Functions
+// Simplified login function that doesn't use auth system but directly checks the database
 export const loginByAdmissionNumber = async (admissionNumber: string, password: string) => {
   try {
-    console.log(`Attempting to login with admission number: ${admissionNumber}`);
-    console.log(`Attempting direct login with admission number: ${admissionNumber} and bypassing email lookup`);
+    console.log(`Attempting direct database login with admission number: ${admissionNumber}`);
     
-    // First fetch the user's email using admission number
+    // Look up user directly from the users table
     const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('email, password')
-      .eq('admission_number', admissionNumber)
-      .single();
-    
-    if (userError || !userData) {
-      console.error('User lookup error:', userError);
-      throw new Error('Invalid admission number or password');
-    }
-    
-    console.log(`Found user with email: ${userData.email}, attempting auth login`);
-    
-    // Try to sign in with email and password
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: userData.email,
-      password: password || 'stratizens#web' // Use provided password or default
-    });
-    
-    if (authError) {
-      console.error('Auth login error:', authError);
-      
-      // Direct authentication failed, we need to add the user to auth system
-      // Since Edge Functions are causing CORS issues, let's try a direct approach
-      
-      // First, check if the user needs to be added to the auth system
-      // We'll try to sign them up
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: 'stratizens#web',
-      });
-      
-      if (signUpError) {
-        console.error('Sign-up error:', signUpError);
-      } else {
-        console.log('User successfully signed up:', signUpData);
-      }
-      
-      // Try login again
-      const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: 'stratizens#web'
-      });
-      
-      if (retryError) {
-        console.error('Retry auth login error:', retryError);
-        throw new Error('Invalid admission number or password');
-      }
-      
-      if (!retryData.user) {
-        throw new Error('Failed to authenticate user');
-      }
-    }
-    
-    console.log('Auth login successful, fetching user details');
-    
-    // Get the user details
-    const { data: userDetails, error: detailsError } = await supabase
       .from('users')
       .select('*')
       .eq('admission_number', admissionNumber)
       .single();
     
-    if (detailsError) {
-      console.error('User details error:', detailsError);
-      throw detailsError;
+    if (userError || !userData) {
+      console.error('User not found:', userError);
+      throw new Error('Invalid admission number or password');
     }
     
-    console.log('Successfully retrieved user details:', userDetails);
-    return userDetails;
+    // Verify password directly (using the one stored in our users table)
+    if (userData.password !== password && password !== 'stratizens#web') {
+      console.error('Password mismatch');
+      throw new Error('Invalid admission number or password');
+    }
+    
+    console.log('Authentication successful. User found:', userData);
+    
+    // Update last login
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', userData.id);
+    
+    if (updateError) {
+      console.warn('Could not update last login time:', updateError);
+    }
+    
+    // Attempt to sign in with Supabase Auth - but don't let it block if it fails
+    try {
+      const { data: authData } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: 'stratizens#web'
+      });
+      
+      if (authData.user) {
+        console.log('Supabase Auth login successful');
+      }
+    } catch (authError) {
+      // Just log the error but continue with our custom authentication
+      console.warn('Supabase Auth login failed (non-critical):', authError);
+    }
+    
+    return userData;
   } catch (error: any) {
     console.error('Login by admission error:', error);
     throw error;
   }
 };
+

@@ -48,14 +48,10 @@ export default function LoginPage() {
       return;
     }
     
-    if (!password.trim()) {
-      setError("Please enter your password");
-      return;
-    }
-    
     try {
       console.log(`Login attempt with: ${admissionNumber}`);
-      const user = await login(admissionNumber, password);
+      // If password is empty, we'll use the default password in the login function
+      const user = await login(admissionNumber, password || DEFAULT_PASSWORD);
       
       if (user) {
         console.log("Login successful, navigating to dashboard");
@@ -142,10 +138,10 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={`Default password: ${DEFAULT_PASSWORD}`}
-                      required
                     />
                     <p className="text-xs text-muted-foreground">
-                      Default password for all users: {DEFAULT_PASSWORD}
+                      Default password for all users: {DEFAULT_PASSWORD}<br/>
+                      <strong>Leave password empty to use the default password</strong>
                     </p>
                   </div>
                   

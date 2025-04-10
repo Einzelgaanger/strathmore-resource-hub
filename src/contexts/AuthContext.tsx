@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, loginByAdmissionNumber } from '@/lib/supabase';
@@ -30,10 +29,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Authentication functions
   const login = async (admissionNumber: string, password: string) => {
     try {
-      console.log(`Attempting to login with admission number: ${admissionNumber}`);
+      console.log(`Login attempt with: ${admissionNumber}`);
       
-      // Use the simplified login function from supabase.ts
-      const userDetails = await loginByAdmissionNumber(admissionNumber, password);
+      // Use our simplified direct login function
+      const userDetails = await loginByAdmissionNumber(admissionNumber, password || DEFAULT_PASSWORD);
       
       console.log('Successfully retrieved user details:', userDetails);
       setUser(userDetails);
@@ -75,13 +74,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      // Always clear the local user state
       setUser(null);
+      
+      // Attempt to sign out from Supabase Auth
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.warn('Supabase Auth signout error (non-critical):', error);
+      }
+      
       navigate('/login');
     } catch (error: any) {
       console.error('Logout error:', error);
-      throw new Error(error.message || 'An error occurred during logout');
+      // Even if there's an error, still clear user state and redirect
+      setUser(null);
+      navigate('/login');
     }
   };
 
@@ -90,7 +97,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Check if admission number and reset code match
       const { data, error } = await supabase
         .from('users')
-        .select('email')
+        .select('*')
         .eq('admission_number', admissionNumber)
         .eq('reset_code', resetCode)
         .single();
@@ -204,7 +211,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Add updateProfile method for ProfilePage
   const updateProfile = async (userData: Partial<User>) => {
     try {
       if (!user?.id) throw new Error('User ID not found');
@@ -228,15 +234,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Add changePassword method as alias to updatePassword for ProfilePage
   const changePassword = updatePassword;
 
-  // Check for user session on initial load and auth state changes
   useEffect(() => {
-    const fetchUser = async () => {
+    const checkForExistingSession = async () => {
+      setLoading(true);
       try {
         console.log('Checking for existing session...');
-        // Get the current auth session
+        
+        // First try to get session from browser storage
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -248,50 +254,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .eq('id', session.user.id)
             .single();
           
-          if (error) {
-            console.error('Error fetching user details from session:', error);
-            throw error;
+          if (!error && data) {
+            console.log('Loaded user details from session:', data);
+            setUser(data);
+          } else {
+            console.log('Could not load user details from session. Clearing session.');
+            await supabase.auth.signOut();
           }
-          
-          console.log('Loaded user details:', data);
-          setUser(data);
         } else {
           console.log('No active session found');
         }
       } catch (error) {
-        console.error('Error fetching user:', error);
-        setUser(null);
+        console.error('Error checking for session:', error);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchUser();
+    checkForExistingSession();
     
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state changed:', event);
-        if (session?.user) {
-          console.log('New session detected for user:', session.user.id);
-          // Get user details on auth state change
+        if (event === 'SIGNED_OUT') {
+          console.log('User signed out');
+          setUser(null);
+        } else if (session?.user && event === 'SIGNED_IN') {
+          console.log('User signed in:', session.user.id);
+          
+          // Get user details from our users table
           const { data, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', session.user.id)
             .single();
           
-          if (!error) {
-            console.log('Updated user details loaded');
+          if (!error && data) {
+            console.log('Loaded user details after sign in:', data);
             setUser(data);
-          } else {
-            console.error('Error loading user details after auth change:', error);
           }
-        } else {
-          console.log('Session ended');
-          setUser(null);
         }
-        setLoading(false);
       }
     );
     
