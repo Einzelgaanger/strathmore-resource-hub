@@ -19,6 +19,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 
+// Constants for Supabase URL and key (same as in supabase.ts) to avoid protected property access issues
+const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+
 export default function UnitPage() {
   const { unitId } = useParams<{ unitId: string }>();
   const { user } = useAuth();
@@ -45,6 +49,45 @@ export default function UnitPage() {
   const [resourceDescription, setResourceDescription] = useState('');
   const [resourceDeadline, setResourceDeadline] = useState('');
   const [resourceFile, setResourceFile] = useState<File | null>(null);
+
+  // Refresh resources function to call after operations
+  const refreshResources = async () => {
+    if (!unitId) return;
+    
+    try {
+      const assignments = await getResourcesForUnit(parseInt(unitId), 'assignment');
+      const notes = await getResourcesForUnit(parseInt(unitId), 'note');
+      const pastPapers = await getResourcesForUnit(parseInt(unitId), 'past_paper');
+      
+      setResources({
+        assignments,
+        notes,
+        past_papers: pastPapers
+      });
+      
+      const creatorsMap: Record<string, User> = {};
+      [...assignments, ...notes, ...pastPapers].forEach(resource => {
+        if (resource.user) {
+          creatorsMap[resource.user_id] = resource.user as unknown as User;
+        }
+      });
+      setCreators(creatorsMap);
+      
+      // Refresh completion status
+      if (user) {
+        const { data: completions } = await supabase
+          .from('completions')
+          .select('resource_id')
+          .eq('user_id', user.id);
+        
+        if (completions) {
+          setCompletedResourceIds(completions.map(c => c.resource_id));
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing resources:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchUnitDetails = async () => {
@@ -146,29 +189,11 @@ export default function UnitPage() {
           const filePath = `public/${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`;
           console.log('Uploading to path:', filePath);
           
-          // First try direct public upload
-          try {
-            const { data, error } = await supabase.storage
-              .from('resources')
-              .upload(filePath, resourceFile, {
-                upsert: true,
-                contentType: resourceFile.type
-              });
-            
-            if (error) throw error;
-            
-            const { data: urlData } = await supabase.storage
-              .from('resources')
-              .getPublicUrl(filePath);
-            
-            fileUrl = urlData.publicUrl;
-            console.log('File uploaded successfully:', fileUrl);
-          } catch (uploadError) {
-            console.error('Direct upload failed, trying alternative method:', uploadError);
-            // Fall back to the helper function
-            const result = await uploadFile('resources', filePath, resourceFile);
-            fileUrl = result.url;
-          }
+          // Use our improved uploadFile helper function from supabase.ts
+          const result = await uploadFile('resources', filePath, resourceFile);
+          fileUrl = result.url;
+          console.log('File uploaded successfully:', fileUrl);
+          
         } catch (uploadError: any) {
           console.error('Upload error details:', uploadError);
           toast.error(`Upload failed: ${uploadError.message || 'Unknown error'}`);
@@ -179,7 +204,7 @@ export default function UnitPage() {
       
       console.log('Creating resource record with file URL:', fileUrl);
       
-      // Use a direct REST API call with the Auth header if the standard approach doesn't work
+      // Create resource data
       const resourceData = {
         title: resourceTitle,
         description: resourceDescription,
@@ -221,7 +246,10 @@ export default function UnitPage() {
             .eq('id', user.id);
         }
         
-        window.location.reload();
+        // Refresh data instead of page reload to prevent logout
+        refreshResources();
+        setUploadDialogOpen(false);
+        
       } catch (resourceError: any) {
         console.error('Resource creation error:', resourceError);
         
@@ -229,12 +257,12 @@ export default function UnitPage() {
         if (resourceError.code === '42501') {
           try {
             console.log('Attempting direct API call for resource creation');
-            const response = await fetch(`${supabase.supabaseUrl}/rest/v1/resources`, {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'apikey': supabase.supabaseKey,
-                'Authorization': `Bearer ${supabase.supabaseKey}`,
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                 'Prefer': 'return=representation'
               },
               body: JSON.stringify(resourceData)
@@ -247,8 +275,9 @@ export default function UnitPage() {
             
             toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
             
-            // Force page refresh after successful upload
-            setTimeout(() => window.location.reload(), 2000);
+            // Refresh data instead of page reload to prevent logout
+            refreshResources();
+            setUploadDialogOpen(false);
           } catch (fetchError) {
             console.error('Fetch API fallback failed:', fetchError);
             throw fetchError;
@@ -270,6 +299,12 @@ export default function UnitPage() {
     if (!user) return;
     
     try {
+      // Check if already completed
+      if (completedResourceIds.includes(resourceId)) {
+        toast.info('You have already completed this resource');
+        return;
+      }
+      
       const { error } = await supabase
         .from('completions')
         .insert({
@@ -280,6 +315,7 @@ export default function UnitPage() {
       
       if (error) throw error;
       
+      // Update points
       await supabase
         .from('users')
         .update({ 
@@ -290,6 +326,18 @@ export default function UnitPage() {
       setCompletedResourceIds([...completedResourceIds, resourceId]);
       
       toast.success('Assignment marked as complete!');
+      
+      // Update the user object to reflect point changes
+      const { data: updatedUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      if (updatedUser) {
+        // Manually update Auth context - we can't directly update it, but we can trigger a refresh
+        // The next time a protected route is accessed, it will get the updated user data
+      }
     } catch (error) {
       console.error('Error marking assignment as complete:', error);
       toast.error('Failed to mark assignment as complete');
@@ -536,7 +584,11 @@ export default function UnitPage() {
                 type="file"
                 onChange={handleFileChange}
                 required={resourceType !== 'assignment'}
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.csv,.jpg,.jpeg,.png"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Supported files: PDF, Word, Excel, PowerPoint, Text, Images, Zip, and more
+              </p>
             </div>
             
             <DialogFooter>

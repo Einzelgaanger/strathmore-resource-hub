@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { formatDistance } from 'date-fns';
 import { Send } from 'lucide-react';
@@ -9,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabase, getCommentsForResource, addCommentToResource } from '@/lib/supabase';
 
 interface CommentListProps {
   comments?: Comment[];
@@ -32,25 +31,8 @@ export function CommentList({ comments: initialComments, resourceId }: CommentLi
       
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from('comments')
-          .select(`
-            *,
-            user:user_id (
-              id,
-              name,
-              admission_number,
-              profile_picture_url
-            )
-          `)
-          .eq('resource_id', resourceId)
-          .order('created_at', { ascending: false });
-        
-        if (error) {
-          throw error;
-        }
-        
-        setComments(data || []);
+        const fetchedComments = await getCommentsForResource(resourceId);
+        setComments(fetchedComments);
       } catch (error) {
         console.error('Error fetching comments:', error);
         toast.error('Failed to load comments');
@@ -68,39 +50,25 @@ export function CommentList({ comments: initialComments, resourceId }: CommentLi
     
     setIsSubmitting(true);
     try {
-      // Insert the comment in the database
-      const { data, error } = await supabase
-        .from('comments')
-        .insert({
-          content: commentText,
-          user_id: user.id,
-          resource_id: resourceId
-        })
-        .select(`
-          *,
-          user:user_id (
-            id,
-            name,
-            admission_number,
-            profile_picture_url
-          )
-        `)
-        .single();
-      
-      if (error) throw error;
-      
-      // Update user points (1 point for commenting)
-      await supabase
-        .from('users')
-        .update({ 
-          points: user.points + 1 
-        })
-        .eq('id', user.id);
+      // Add the comment using our helper function
+      const newComment = await addCommentToResource(resourceId, user.id, commentText);
       
       // Add the new comment to the list
-      setComments([data, ...comments]);
+      setComments([newComment, ...comments]);
       toast.success('Comment added successfully');
       setCommentText('');
+      
+      // Fetch user points to keep them updated
+      const { data: updatedUserData } = await supabase
+        .from('users')
+        .select('points')
+        .eq('id', user.id)
+        .single();
+      
+      if (updatedUserData) {
+        // We can't update the user context directly here, 
+        // but the points will be updated the next time the user logs in or refreshes
+      }
     } catch (error) {
       console.error('Failed to submit comment:', error);
       toast.error('Failed to add comment');

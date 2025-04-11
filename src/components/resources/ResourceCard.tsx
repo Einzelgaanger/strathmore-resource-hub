@@ -11,6 +11,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { useAuth } from '@/contexts/AuthContext';
 import { CommentList } from './CommentList';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getCommentsForResource } from '@/lib/supabase';
 
 interface ResourceCardProps {
   resource: Resource;
@@ -25,52 +26,14 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
+  
   const isOwner = user?.id === creator.id;
   const isAdmin = user?.is_admin || user?.is_super_admin;
   const canDelete = isOwner || isAdmin;
   
-  // Mock comments
-  const mockComments: Comment[] = [
-    {
-      id: 1,
-      content: 'This was really helpful, thanks for sharing!',
-      user_id: 'mock-user-1',
-      resource_id: resource.id,
-      created_at: new Date(Date.now() - 3600000).toISOString(),
-      user: {
-        id: 'mock-user-1',
-        admission_number: '123456',
-        email: '123456@strathmore.edu',
-        name: 'Jane Doe',
-        class_instance_id: 1,
-        is_admin: false,
-        is_super_admin: false,
-        points: 250,
-        rank: 2,
-        created_at: ''
-      }
-    },
-    {
-      id: 2,
-      content: 'Could you clarify the third section a bit more?',
-      user_id: 'mock-user-2',
-      resource_id: resource.id,
-      created_at: new Date(Date.now() - 7200000).toISOString(),
-      user: {
-        id: 'mock-user-2',
-        admission_number: '789012',
-        email: '789012@strathmore.edu',
-        name: 'John Smith',
-        class_instance_id: 1,
-        is_admin: false,
-        is_super_admin: false,
-        points: 500,
-        rank: 3,
-        created_at: ''
-      }
-    }
-  ];
-
   const handleLike = () => {
     if (disliked) setDisliked(false);
     setLiked(!liked);
@@ -82,8 +45,27 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
   };
 
   const handleDownload = () => {
-    // In a real app, this would trigger a download of the resource file
-    window.open(resource.file_url || '#', '_blank');
+    // Check if the resource has a file URL
+    if (!resource.file_url) {
+      toast.error('No file available for download');
+      return;
+    }
+    
+    // Create a temporary anchor element to trigger the download
+    const link = document.createElement('a');
+    link.href = resource.file_url;
+    
+    // Extract a filename from the URL
+    const filename = resource.file_url.split('/').pop() || `${resource.title.replace(/\s+/g, '_')}.pdf`;
+    link.setAttribute('download', filename);
+    
+    // Append to the document, click programmatically, then remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Let the user know the download has started
+    toast.success('Download started!');
   };
 
   const handleComplete = () => {
@@ -92,6 +74,21 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
 
   const handleDelete = () => {
     if (onDelete) onDelete();
+  };
+  
+  const handleOpenComments = async () => {
+    try {
+      setLoadingComments(true);
+      const fetchedComments = await getCommentsForResource(resource.id);
+      setComments(fetchedComments);
+      setCommentCount(fetchedComments.length);
+      setShowComments(true);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+      toast.error('Failed to load comments');
+    } finally {
+      setLoadingComments(false);
+    }
   };
 
   const isOverdue = resource.type === 'assignment' && resource.deadline && new Date(resource.deadline) < new Date();
@@ -162,9 +159,12 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
               <span>{resource.dislikes + (disliked ? 1 : 0)}</span>
             </Button>
             
-            <Button variant="ghost" size="sm" className="gap-1" onClick={() => setShowComments(true)}>
+            <Button variant="ghost" size="sm" className="gap-1" onClick={handleOpenComments}>
               <MessageSquare className="h-4 w-4" />
-              <span>{mockComments.length}</span>
+              <span>{commentCount}</span>
+              {loadingComments && (
+                <span className="ml-1 animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full"></span>
+              )}
             </Button>
           </div>
           
@@ -174,6 +174,13 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
                 <Check className="h-4 w-4" />
                 <span>Mark Done</span>
               </Button>
+            )}
+            
+            {resource.type === 'assignment' && completed && (
+              <Badge variant="outline" className="flex items-center gap-1 py-1 px-2 border-green-500 text-green-700">
+                <Check className="h-3 w-3" />
+                <span>Completed</span>
+              </Badge>
             )}
             
             {resource.file_url && (
@@ -191,7 +198,7 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
           <DialogHeader>
             <DialogTitle>Comments on {resource.title}</DialogTitle>
           </DialogHeader>
-          <CommentList comments={mockComments} resourceId={resource.id} />
+          <CommentList comments={comments} resourceId={resource.id} />
         </DialogContent>
       </Dialog>
     </>

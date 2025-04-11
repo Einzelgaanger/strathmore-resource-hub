@@ -39,35 +39,41 @@ export const getUserDetails = async (userId: string) => {
   return data;
 };
 
-// Simplified and more robust file upload function with multiple fallback strategies
+// Improved file upload function with multiple fallback strategies
 export const uploadFile = async (bucketName: string, filePath: string, file: File) => {
   try {
     console.log(`Attempting to upload file to ${bucketName}/${filePath}`);
     
-    // Try standard upload to public folder first
+    // Make sure the file path starts with 'public/' for proper RLS policy application
     if (!filePath.startsWith('public/')) {
       filePath = `public/${filePath}`;
     }
     
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(bucketName)
-      .upload(filePath, file, {
-        upsert: true,
-        contentType: file.type
-      });
-    
-    if (uploadError) {
-      console.error('Standard upload failed:', uploadError);
+    // Strategy 1: Standard upload to public folder
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type
+        });
       
-      // Try with direct API call
+      if (uploadError) throw uploadError;
+      
+      const { data: urlData } = await supabase.storage
+        .from(bucketName)
+        .getPublicUrl(filePath);
+      
+      console.log('File uploaded successfully:', urlData.publicUrl);
+      return { path: filePath, url: urlData.publicUrl };
+    } catch (error) {
+      console.error('Standard upload failed, trying alternative method:', error);
+      
+      // Strategy 2: Direct REST API call
       try {
-        console.log('Trying alternative upload method with direct REST API call');
-        
-        // Create a FormData object
         const formData = new FormData();
         formData.append('file', file);
         
-        // Create a direct fetch request to Supabase Storage API
         const response = await fetch(
           `${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, 
           {
@@ -84,55 +90,32 @@ export const uploadFile = async (bucketName: string, filePath: string, file: Fil
         }
         
         const result = await response.json();
-        const signedUrl = result.signedURL || '';
+        const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
         
-        return { 
-          path: filePath, 
-          url: signedUrl || `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`
-        };
+        return { path: filePath, url: publicUrl };
       } catch (fallbackError) {
-        // Try one more approach - anonymous public upload
-        try {
-          console.log('Trying public anonymous upload...');
+        console.error('Alternative upload failed, trying public anonymous upload:', fallbackError);
+        
+        // Strategy 3: Simplified anonymous upload to public path
+        const simplePath = `public/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+        const { data, error } = await supabase.storage
+          .from(bucketName)
+          .upload(simplePath, file, {
+            upsert: true,
+            contentType: file.type
+          });
           
-          const formData = new FormData();
-          formData.append('file', file);
+        if (error) throw error;
+        
+        const { data: urlData } = await supabase.storage
+          .from(bucketName)
+          .getPublicUrl(simplePath);
           
-          const response = await fetch(
-            `${supabaseUrl}/storage/v1/object/${bucketName}/public/${file.name}`,
-            {
-              method: 'POST',
-              headers: {
-                'apikey': supabaseAnonKey,
-              },
-              body: formData
-            }
-          );
-          
-          if (!response.ok) {
-            throw new Error(`Public upload failed with status: ${response.status}`);
-          }
-          
-          return {
-            path: `public/${file.name}`,
-            url: `${supabaseUrl}/storage/v1/object/public/${bucketName}/public/${file.name}`
-          };
-        } catch (publicUploadError) {
-          console.error('All upload attempts failed:', publicUploadError);
-          throw publicUploadError;
-        }
+        return { path: simplePath, url: urlData.publicUrl };
       }
     }
-    
-    const { data: urlData } = await supabase.storage
-      .from(bucketName)
-      .getPublicUrl(filePath);
-    
-    console.log('File uploaded successfully:', urlData.publicUrl);
-    
-    return { path: filePath, url: urlData.publicUrl };
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('All upload attempts failed:', error);
     throw error;
   }
 };
@@ -319,6 +302,8 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     
     // Attempt to sign in with Supabase Auth - but don't let it block if it fails
     try {
+      // Note: This is using the standard auth system but with our custom password
+      // This might help with RLS policies that depend on auth.uid()
       const { data: authData } = await supabase.auth.signInWithPassword({
         email: userData.email,
         password: 'stratizens#web'
@@ -337,4 +322,69 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
     console.error('Login by admission error:', error);
     throw error;
   }
+};
+
+// Helper to get comments for a resource
+export const getCommentsForResource = async (resourceId: number) => {
+  const { data, error } = await supabase
+    .from('comments')
+    .select(`
+      *,
+      user:user_id (
+        id,
+        name,
+        admission_number,
+        profile_picture_url
+      )
+    `)
+    .eq('resource_id', resourceId)
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching comments:', error);
+    throw error;
+  }
+  
+  return data || [];
+};
+
+// Add a comment to a resource
+export const addCommentToResource = async (resourceId: number, userId: string, content: string) => {
+  const { data, error } = await supabase
+    .from('comments')
+    .insert({
+      resource_id: resourceId,
+      user_id: userId,
+      content: content,
+      created_at: new Date().toISOString()
+    })
+    .select(`
+      *,
+      user:user_id (
+        id,
+        name,
+        admission_number,
+        profile_picture_url
+      )
+    `)
+    .single();
+  
+  if (error) {
+    console.error('Error adding comment:', error);
+    throw error;
+  }
+  
+  // Award points for commenting
+  try {
+    await supabase
+      .from('users')
+      .update({ 
+        points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
+      })
+      .eq('id', userId);
+  } catch (pointsError) {
+    console.warn('Could not update points for comment (non-critical):', pointsError);
+  }
+  
+  return data;
 };
