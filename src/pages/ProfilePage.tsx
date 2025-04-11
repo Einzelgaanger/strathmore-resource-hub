@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { RankBadge, getRankFromPoints } from '@/components/ui/rank-badge';
 import { DEFAULT_PASSWORD } from '@/lib/constants';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function ProfilePage() {
   const { user, updateProfile, updatePassword, updateProfilePicture } = useAuth();
@@ -21,6 +22,7 @@ export default function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
   
   if (!user) {
@@ -77,6 +79,32 @@ export default function ProfilePage() {
     } catch (error) {
       console.error('Failed to change password:', error);
       toast.error('Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleEmailUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+    
+    if (email === user.email) {
+      toast.info('Email is unchanged');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Update email in the users table
+      await updateProfile({ email });
+      
+      toast.success('Email updated successfully');
+    } catch (error) {
+      console.error('Failed to update email:', error);
+      toast.error('Failed to update email');
     } finally {
       setLoading(false);
     }
@@ -147,10 +175,28 @@ export default function ProfilePage() {
                   <Input value={user.name} readOnly disabled />
                 </div>
                 
-                <div className="space-y-1">
-                  <Label>Email</Label>
-                  <Input value={user.email} readOnly disabled />
-                </div>
+                <form onSubmit={handleEmailUpdate} className="space-y-1">
+                  <Label htmlFor="email">Email</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                    <Button 
+                      type="submit" 
+                      size="sm" 
+                      disabled={loading || email === user.email}
+                    >
+                      {loading ? 'Saving...' : 'Update'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This email will be used for password recovery
+                  </p>
+                </form>
                 
                 <div className="space-y-1">
                   <Label>Points</Label>

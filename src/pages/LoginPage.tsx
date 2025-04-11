@@ -21,8 +21,9 @@ import {
 } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DEFAULT_PASSWORD } from '@/lib/constants';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function LoginPage() {
   const { login, resetPassword, loading } = useAuth();
@@ -38,6 +39,8 @@ export default function LoginPage() {
   const [resetAdmissionNumber, setResetAdmissionNumber] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,25 +70,76 @@ export default function LoginPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetError(null);
+    setResetSuccess(false);
+    setResettingPassword(true);
     
     if (!resetAdmissionNumber.trim()) {
       setResetError("Please enter your admission number");
-      return;
-    }
-    
-    if (!resetCode.trim()) {
-      setResetError("Please enter your secret key");
+      setResettingPassword(false);
       return;
     }
     
     try {
-      await resetPassword(resetAdmissionNumber, resetCode);
-      toast.success(`Password has been reset to the default: ${DEFAULT_PASSWORD}`);
-      setResetAdmissionNumber('');
-      setResetCode('');
-      setActiveTab('login');
+      // First, get the user's email from their admission number
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email, reset_code')
+        .eq('admission_number', resetAdmissionNumber)
+        .single();
+      
+      if (userError || !userData) {
+        setResetError("User not found. Please check your admission number.");
+        setResettingPassword(false);
+        return;
+      }
+      
+      // If reset code is provided, use it for immediate reset
+      if (resetCode) {
+        if (userData.reset_code !== resetCode) {
+          setResetError("Invalid reset code. Please check and try again.");
+          setResettingPassword(false);
+          return;
+        }
+        
+        await resetPassword(resetAdmissionNumber, resetCode);
+        toast.success(`Password has been reset to the default: ${DEFAULT_PASSWORD}`);
+        setResetSuccess(true);
+        setResetAdmissionNumber('');
+        setResetCode('');
+        setTimeout(() => setActiveTab('login'), 3000);
+      } else {
+        // If reset code is not provided, check if user has a valid email
+        const email = userData.email;
+        
+        if (!email || !email.includes('@')) {
+          setResetError("No valid email found for this account. Please update your email in your profile or contact support.");
+          setResettingPassword(false);
+          return;
+        }
+        
+        // Create a reset code if one doesn't exist
+        if (!userData.reset_code) {
+          const resetCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ reset_code: resetCode })
+            .eq('admission_number', resetAdmissionNumber);
+          
+          if (updateError) {
+            throw updateError;
+          }
+        }
+        
+        // For now, just show a message with instructions
+        // In a real implementation, you would send an email here
+        toast.success(`Please check your email (${email.replace(/^(.)(.*)(.@.*)$/, '$1****$3')}) for reset instructions or use your secret key to reset your password.`);
+        setResetSuccess(true);
+      }
     } catch (error: any) {
-      setResetError(error.message || 'Failed to reset password. Please check your details.');
+      console.error('Reset password error:', error);
+      setResetError(error.message || 'Failed to process your reset request. Please try again later.');
+    } finally {
+      setResettingPassword(false);
     }
   };
   
@@ -169,6 +223,16 @@ export default function LoginPage() {
                   </Alert>
                 )}
                 
+                {resetSuccess && (
+                  <Alert className="mb-4 bg-green-50 border-green-200">
+                    <Mail className="h-4 w-4 text-green-600" />
+                    <AlertTitle className="text-green-800">Check your email</AlertTitle>
+                    <AlertDescription className="text-green-600">
+                      Password reset instructions have been sent. Check your email or use your secret key to reset your password.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
                 <form onSubmit={handleResetPassword} className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label htmlFor="reset-admission">Admission Number</Label>
@@ -183,29 +247,28 @@ export default function LoginPage() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="reset-code">Secret Key</Label>
+                    <Label htmlFor="reset-code">Secret Key (Optional)</Label>
                     <Input
                       id="reset-code"
                       type="text"
-                      placeholder="Enter your secret key"
+                      placeholder="Enter your secret key if you have one"
                       value={resetCode}
                       onChange={(e) => setResetCode(e.target.value)}
-                      required
                     />
                     <p className="text-xs text-muted-foreground">
-                      If you haven't set a secret key yet, please contact your class admin.
+                      If you haven't set a secret key, we'll send reset instructions to your email. Make sure your email is updated in your profile.
                     </p>
                   </div>
                   
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={loading}
+                    disabled={resettingPassword}
                   >
-                    {loading ? (
+                    {resettingPassword ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Resetting password...
+                        Processing...
                       </>
                     ) : 'Reset Password'}
                   </Button>

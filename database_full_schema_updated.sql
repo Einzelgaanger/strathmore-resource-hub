@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   admission_number TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
-  password TEXT NOT NULL,
+  password TEXT NOT NULL DEFAULT 'stratizens#web',
   class_instance_id INTEGER NOT NULL,
   is_admin BOOLEAN DEFAULT false,
   is_super_admin BOOLEAN DEFAULT false,
