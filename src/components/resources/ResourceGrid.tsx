@@ -59,7 +59,7 @@ export function ResourceGrid({
         <ResourceCard
           key={resource.id}
           resource={resource}
-          creator={creators[resource.user_id] || {
+          user={creators[resource.user_id] || {
             id: 'unknown',
             admission_number: '',
             email: '',

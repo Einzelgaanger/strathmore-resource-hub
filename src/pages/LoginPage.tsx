@@ -37,7 +37,6 @@ export default function LoginPage() {
   
   // Reset password form
   const [resetAdmissionNumber, setResetAdmissionNumber] = useState('');
-  const [resetCode, setResetCode] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
@@ -83,7 +82,7 @@ export default function LoginPage() {
       // First, get the user's email from their admission number
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('email, reset_code')
+        .select('email')
         .eq('admission_number', resetAdmissionNumber)
         .single();
       
@@ -93,48 +92,21 @@ export default function LoginPage() {
         return;
       }
       
-      // If reset code is provided, use it for immediate reset
-      if (resetCode) {
-        if (userData.reset_code !== resetCode) {
-          setResetError("Invalid reset code. Please check and try again.");
-          setResettingPassword(false);
-          return;
-        }
-        
-        await resetPassword(resetAdmissionNumber, resetCode);
-        toast.success(`Password has been reset to the default: ${DEFAULT_PASSWORD}`);
-        setResetSuccess(true);
-        setResetAdmissionNumber('');
-        setResetCode('');
-        setTimeout(() => setActiveTab('login'), 3000);
-      } else {
-        // If reset code is not provided, check if user has a valid email
-        const email = userData.email;
-        
-        if (!email || !email.includes('@')) {
-          setResetError("No valid email found for this account. Please update your email in your profile or contact support.");
-          setResettingPassword(false);
-          return;
-        }
-        
-        // Create a reset code if one doesn't exist
-        if (!userData.reset_code) {
-          const resetCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({ reset_code: resetCode })
-            .eq('admission_number', resetAdmissionNumber);
-          
-          if (updateError) {
-            throw updateError;
-          }
-        }
-        
-        // For now, just show a message with instructions
-        // In a real implementation, you would send an email here
-        toast.success(`Please check your email (${email.replace(/^(.)(.*)(.@.*)$/, '$1****$3')}) for reset instructions or use your secret key to reset your password.`);
-        setResetSuccess(true);
+      // Check if user has a valid email
+      if (!userData.email || !userData.email.includes('@')) {
+        setResetError("No valid email found for this account. Please update your email in your profile.");
+        setResettingPassword(false);
+        return;
       }
+      
+      // Send reset email (in a real implementation)
+      await resetPassword(resetAdmissionNumber);
+      
+      // Show success message with masked email
+      const maskedEmail = userData.email.replace(/^(.)(.*)(.@.*)$/, '$1****$3');
+      toast.success(`Reset instructions sent to ${maskedEmail}`);
+      setResetSuccess(true);
+      setResetAdmissionNumber('');
     } catch (error: any) {
       console.error('Reset password error:', error);
       setResetError(error.message || 'Failed to process your reset request. Please try again later.');
@@ -228,7 +200,7 @@ export default function LoginPage() {
                     <Mail className="h-4 w-4 text-green-600" />
                     <AlertTitle className="text-green-800">Check your email</AlertTitle>
                     <AlertDescription className="text-green-600">
-                      Password reset instructions have been sent. Check your email or use your secret key to reset your password.
+                      Password reset instructions have been sent to your registered email address.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -244,19 +216,8 @@ export default function LoginPage() {
                       onChange={(e) => setResetAdmissionNumber(e.target.value)}
                       required
                     />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="reset-code">Secret Key (Optional)</Label>
-                    <Input
-                      id="reset-code"
-                      type="text"
-                      placeholder="Enter your secret key if you have one"
-                      value={resetCode}
-                      onChange={(e) => setResetCode(e.target.value)}
-                    />
                     <p className="text-xs text-muted-foreground">
-                      If you haven't set a secret key, we'll send reset instructions to your email. Make sure your email is updated in your profile.
+                      Enter your admission number and we'll send password reset instructions to your registered email address.
                     </p>
                   </div>
                   
@@ -268,9 +229,9 @@ export default function LoginPage() {
                     {resettingPassword ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
+                        Sending reset instructions...
                       </>
-                    ) : 'Reset Password'}
+                    ) : 'Get Reset Link'}
                   </Button>
                 </form>
               </TabsContent>

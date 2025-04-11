@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { LogOut, User as UserIcon, Home, Book, Settings, ChevronLeft, Menu, Loader2 } from 'lucide-react';
+import { LogOut, User as UserIcon, Home, Book, ChevronLeft, Menu, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -13,10 +13,11 @@ interface SidebarLinkProps {
   href: string;
   icon: React.ReactNode;
   title: string;
+  subtitle?: string;
   active?: boolean;
 }
 
-const SidebarLink = ({ href, icon, title, active }: SidebarLinkProps) => {
+const SidebarLink = ({ href, icon, title, subtitle, active }: SidebarLinkProps) => {
   const navigate = useNavigate();
   
   return (
@@ -29,7 +30,10 @@ const SidebarLink = ({ href, icon, title, active }: SidebarLinkProps) => {
       onClick={() => navigate(href)}
     >
       {icon}
-      <span>{title}</span>
+      <div className="flex flex-col items-start">
+        <span>{title}</span>
+        {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+      </div>
     </Button>
   );
 };
@@ -120,7 +124,8 @@ export function DashboardLayout({ children, units: propUnits }: DashboardLayoutP
                   key={unit.id}
                   href={`/unit/${unit.id}`}
                   icon={<Book size={20} />}
-                  title={expanded ? unit.code : ''}
+                  title={expanded ? unit.name : unit.code}
+                  subtitle={expanded ? unit.code : undefined}
                   active={location.pathname === `/unit/${unit.id}`}
                 />
               ))
@@ -131,13 +136,6 @@ export function DashboardLayout({ children, units: propUnits }: DashboardLayoutP
               icon={<UserIcon size={20} />} 
               title="My Profile" 
               active={location.pathname === '/profile'} 
-            />
-            
-            <SidebarLink 
-              href="/settings" 
-              icon={<Settings size={20} />} 
-              title="Settings" 
-              active={location.pathname === '/settings'} 
             />
           </nav>
         </div>

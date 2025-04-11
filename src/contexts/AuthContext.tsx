@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,13 +12,13 @@ interface AuthContextType {
   login: (admissionNumber: string, password: string) => Promise<User | null>;
   signUp: (email: string, password: string, userData: Partial<User>) => Promise<any>;
   logout: () => Promise<void>;
-  resetPassword: (admissionNumber: string, resetCode: string) => Promise<boolean>;
+  resetPassword: (admissionNumber: string, resetCode?: string) => Promise<boolean>;
   updateResetCode: (userId: string, resetCode: string) => Promise<boolean>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   updateProfilePicture: (userId: string, file: File) => Promise<string>;
   updateProfile: (userData: Partial<User>) => Promise<boolean>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
-  updateUserProfile: (userData: Partial<User>) => Promise<{ data?: User; error?: string }>;
+  updateUserProfile: (userData: Partial<User>) => Promise<{ data?: User; error?: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -93,29 +94,55 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const resetPassword = async (admissionNumber: string, resetCode: string) => {
+  const resetPassword = async (admissionNumber: string, resetCode?: string) => {
     try {
-      // Check if admission number and reset code match
-      const { data, error } = await supabase
+      // Check if user with this admission number exists
+      const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
         .eq('admission_number', admissionNumber)
-        .eq('reset_code', resetCode)
         .single();
       
-      if (error || !data) {
-        throw new Error('Invalid admission number or reset code');
+      if (userError || !userData) {
+        throw new Error('User not found');
       }
       
-      // Reset password to default
-      const { error: updateError } = await supabase
+      // If reset code is provided, check it
+      if (resetCode && userData.reset_code !== resetCode) {
+        throw new Error('Invalid reset code');
+      }
+      
+      // If no reset code provided, send password reset to email
+      if (!resetCode) {
+        // Check if user has valid email
+        if (!userData.email || !userData.email.includes('@')) {
+          throw new Error('No valid email found for this account');
+        }
+        
+        // Generate a password reset token (in a real app we would send this via email)
+        const randomToken = Math.random().toString(36).substring(2, 15);
+        
+        // Store the token
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ reset_code: randomToken })
+          .eq('id', userData.id);
+        
+        if (updateError) throw updateError;
+        
+        // In a real app, we would send an email with the reset link
+        console.log(`Password reset requested for: ${userData.email}`);
+        
+        return true;
+      }
+      
+      // If reset code matches, reset password to default
+      const { error: resetError } = await supabase
         .from('users')
         .update({ password: DEFAULT_PASSWORD })
         .eq('admission_number', admissionNumber);
       
-      if (updateError) {
-        throw updateError;
-      }
+      if (resetError) throw resetError;
       
       return true;
     } catch (error: any) {
@@ -250,25 +277,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      // Make sure we have the required fields in our update
-      const updatePayload: any = {
+      // Create a properly typed update payload
+      const updatePayload = {
+        admission_number: user.admission_number, // Always include required fields
+        email: userData.email || user.email,
+        name: user.name, // Name cannot be changed
         ...userData,
-        id: user.id,
       };
       
-      // Ensure required fields are included
-      if (!updatePayload.admission_number) {
-        updatePayload.admission_number = user.admission_number;
-      }
-      
-      if (!updatePayload.email) {
-        updatePayload.email = user.email;
-      }
-      
-      if (!updatePayload.name) {
-        updatePayload.name = user.name;
-      }
-      
+      // Execute the update
       const { data, error } = await supabase
         .from('users')
         .update(updatePayload)

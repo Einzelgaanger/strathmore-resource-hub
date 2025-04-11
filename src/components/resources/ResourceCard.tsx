@@ -3,7 +3,7 @@ import { FC, useState } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Resource } from '@/lib/types';
+import { Resource, User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { Download, ThumbsUp, ThumbsDown } from 'lucide-react';
@@ -12,24 +12,26 @@ import { toast } from 'sonner';
 
 interface ResourceCardProps {
   resource: Resource;
-  onMarkCompleted?: (resourceId: number) => Promise<void>;
-  isCompleted?: boolean;
-  showActions?: boolean;
-  showFooter?: boolean;
+  user: User;
+  completed?: boolean;
+  onComplete?: () => void;
+  onDelete?: () => void;
+  onEdit?: () => void;
 }
 
 const ResourceCard: FC<ResourceCardProps> = ({
   resource,
-  onMarkCompleted,
-  isCompleted = false,
-  showActions = true,
-  showFooter = true,
+  user,
+  completed = false,
+  onComplete,
+  onDelete,
+  onEdit,
 }) => {
-  const { user } = useAuth();
+  const { user: currentUser } = useAuth();
   const [likes, setLikes] = useState(resource.likes || 0);
   const [dislikes, setDislikes] = useState(resource.dislikes || 0);
   const [loading, setLoading] = useState(false);
-  const [completed, setCompleted] = useState(isCompleted);
+  const [isCompleted, setIsCompleted] = useState(completed);
 
   const handleDownload = () => {
     if (!resource.file_url) {
@@ -44,12 +46,33 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const handleLike = async () => {
     try {
       setLoading(true);
+      
+      // Update the resource likes count
       const { error } = await supabase
         .from('resources')
         .update({ likes: likes + 1 })
         .eq('id', resource.id);
       
       if (error) throw error;
+      
+      // Add points to the creator (5 points per like)
+      if (resource.user_id) {
+        const { error: pointsError } = await supabase
+          .from('users')
+          .update({ 
+            points: supabase.rpc('increment_points', { 
+              user_id: resource.user_id, 
+              amount: 5 
+            }) 
+          })
+          .eq('id', resource.user_id);
+          
+        if (pointsError) {
+          console.warn('Could not update creator points (non-critical):', pointsError);
+        } else {
+          toast.success('Resource liked! Creator awarded 5 points.');
+        }
+      }
       
       setLikes(prev => prev + 1);
     } catch (error) {
@@ -63,12 +86,33 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const handleDislike = async () => {
     try {
       setLoading(true);
+      
+      // Update the resource dislikes count
       const { error } = await supabase
         .from('resources')
         .update({ dislikes: dislikes + 1 })
         .eq('id', resource.id);
       
       if (error) throw error;
+      
+      // Subtract points from the creator (2 points per dislike)
+      if (resource.user_id) {
+        const { error: pointsError } = await supabase
+          .from('users')
+          .update({ 
+            points: supabase.rpc('increment_points', { 
+              user_id: resource.user_id, 
+              amount: -2 
+            }) 
+          })
+          .eq('id', resource.user_id);
+          
+        if (pointsError) {
+          console.warn('Could not update creator points (non-critical):', pointsError);
+        } else {
+          toast.info('Resource disliked. Creator lost 2 points.');
+        }
+      }
       
       setDislikes(prev => prev + 1);
     } catch (error) {
@@ -80,12 +124,39 @@ const ResourceCard: FC<ResourceCardProps> = ({
   };
 
   const handleMarkCompleted = async () => {
-    if (!onMarkCompleted) return;
+    if (!onComplete) return;
+    
     try {
       setLoading(true);
-      await onMarkCompleted(resource.id);
-      setCompleted(true);
-      toast.success('Resource marked as completed');
+      
+      // Check if the resource is overdue
+      const isOverdue = resource.deadline ? new Date(resource.deadline) < new Date() : false;
+      
+      // Apply points modification based on timeliness
+      if (currentUser) {
+        const pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
+        
+        const { error: pointsError } = await supabase
+          .from('users')
+          .update({ 
+            points: (currentUser.points || 0) + pointsChange 
+          })
+          .eq('id', currentUser.id);
+          
+        if (pointsError) {
+          console.warn('Could not update points (non-critical):', pointsError);
+        } else {
+          if (isOverdue) {
+            toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
+          } else {
+            toast.success(`Assignment completed on time! +${pointsChange} points!`);
+          }
+        }
+      }
+      
+      // Call the onComplete handler
+      onComplete();
+      setIsCompleted(true);
     } catch (error) {
       console.error('Error marking resource as completed:', error);
       toast.error('Failed to mark resource as completed');
@@ -103,7 +174,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
           <div className="space-y-1">
             <CardTitle className="line-clamp-2">{resource.title}</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Posted by {resource.user?.name || 'Unknown'} {resource.created_at && `• ${formatDistanceToNow(new Date(resource.created_at), { addSuffix: true })}`}
+              Posted by {user?.name || 'Unknown User'} {resource.created_at && `• ${formatDistanceToNow(new Date(resource.created_at), { addSuffix: true })}`}
             </p>
           </div>
           <Badge variant={getVariantForType(resource.type)}>
@@ -122,65 +193,82 @@ const ResourceCard: FC<ResourceCardProps> = ({
           </div>
         )}
         
-        {completed && (
+        {isCompleted && (
           <Badge variant="outline" className="mt-2 bg-green-50 text-green-700 border-green-200">
             Completed
           </Badge>
         )}
         
-        {isOverdue && resource.type === 'assignment' && !completed && (
+        {isOverdue && resource.type === 'assignment' && !isCompleted && (
           <Badge variant="outline" className="mt-2 bg-red-50 text-red-700 border-red-200">
             Overdue
           </Badge>
         )}
       </CardContent>
       
-      {showFooter && (
-        <CardFooter className="border-t pt-4 flex flex-wrap gap-2">
-          {resource.file_url && (
-            <Button size="sm" variant="outline" onClick={handleDownload}>
-              <Download className="h-4 w-4 mr-1" />
-              Download
-            </Button>
-          )}
-          
-          {showActions && (
-            <>
-              <Button 
-                size="sm" 
-                variant="ghost"
-                onClick={handleLike}
-                disabled={loading}
-              >
-                <ThumbsUp className="h-4 w-4 mr-1" />
-                {likes}
-              </Button>
-              
-              <Button 
-                size="sm" 
-                variant="ghost"
-                onClick={handleDislike}
-                disabled={loading}
-              >
-                <ThumbsDown className="h-4 w-4 mr-1" />
-                {dislikes}
-              </Button>
-              
-              {resource.type === 'assignment' && !completed && onMarkCompleted && (
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="ml-auto"
-                  onClick={handleMarkCompleted}
-                  disabled={loading}
-                >
-                  Mark as Done
-                </Button>
-              )}
-            </>
-          )}
-        </CardFooter>
-      )}
+      <CardFooter className="border-t pt-4 flex flex-wrap gap-2">
+        {resource.file_url && (
+          <Button size="sm" variant="outline" onClick={handleDownload}>
+            <Download className="h-4 w-4 mr-1" />
+            Download
+          </Button>
+        )}
+        
+        <Button 
+          size="sm" 
+          variant="ghost"
+          onClick={handleLike}
+          disabled={loading}
+        >
+          <ThumbsUp className="h-4 w-4 mr-1" />
+          {likes}
+        </Button>
+        
+        <Button 
+          size="sm" 
+          variant="ghost"
+          onClick={handleDislike}
+          disabled={loading}
+        >
+          <ThumbsDown className="h-4 w-4 mr-1" />
+          {dislikes}
+        </Button>
+        
+        {resource.type === 'assignment' && !isCompleted && onComplete && (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="ml-auto"
+            onClick={handleMarkCompleted}
+            disabled={loading}
+          >
+            Mark as Done
+          </Button>
+        )}
+        
+        {onDelete && (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
+            disabled={loading}
+          >
+            Delete
+          </Button>
+        )}
+        
+        {onEdit && (
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={onEdit}
+            disabled={loading}
+          >
+            Edit
+          </Button>
+        )}
+      </CardFooter>
     </Card>
   );
 };
