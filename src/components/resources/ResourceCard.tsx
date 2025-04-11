@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { format, formatDistance } from 'date-fns';
-import { ThumbsUp, ThumbsDown, MessageSquare, Download, Check, Trash2 } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Download, Check, Trash2, Edit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CommentList } from './CommentList';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getCommentsForResource } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 interface ResourceCardProps {
   resource: Resource;
@@ -19,9 +20,10 @@ interface ResourceCardProps {
   completed?: boolean;
   onComplete?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
 }
 
-export function ResourceCard({ resource, creator, completed = false, onComplete, onDelete }: ResourceCardProps) {
+export function ResourceCard({ resource, creator, completed = false, onComplete, onDelete, onEdit }: ResourceCardProps) {
   const { user } = useAuth();
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
@@ -32,7 +34,7 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
   
   const isOwner = user?.id === creator.id;
   const isAdmin = user?.is_admin || user?.is_super_admin;
-  const canDelete = isOwner || isAdmin;
+  const canManage = isOwner || isAdmin;
   
   const handleLike = () => {
     if (disliked) setDisliked(false);
@@ -74,6 +76,10 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
 
   const handleDelete = () => {
     if (onDelete) onDelete();
+  };
+  
+  const handleEdit = () => {
+    if (onEdit) onEdit();
   };
   
   const handleOpenComments = async () => {
@@ -124,10 +130,17 @@ export function ResourceCard({ resource, creator, completed = false, onComplete,
               </div>
             </div>
             
-            {canDelete && (
-              <Button variant="ghost" size="icon" onClick={handleDelete} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
+            {canManage && (
+              <div className="flex space-x-1">
+                {isOwner && (
+                  <Button variant="ghost" size="icon" onClick={handleEdit} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Edit className="h-4 w-4 text-primary" />
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={handleDelete} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
             )}
           </div>
         </CardHeader>

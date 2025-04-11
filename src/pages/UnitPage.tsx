@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -19,7 +18,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 
-// Constants for Supabase URL and key (same as in supabase.ts) to avoid protected property access issues
 const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
 
@@ -49,8 +47,10 @@ export default function UnitPage() {
   const [resourceDescription, setResourceDescription] = useState('');
   const [resourceDeadline, setResourceDeadline] = useState('');
   const [resourceFile, setResourceFile] = useState<File | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editResourceId, setEditResourceId] = useState<number | null>(null);
+  const [currentResource, setCurrentResource] = useState<Resource | null>(null);
 
-  // Refresh resources function to call after operations
   const refreshResources = async () => {
     if (!unitId) return;
     
@@ -73,7 +73,6 @@ export default function UnitPage() {
       });
       setCreators(creatorsMap);
       
-      // Refresh completion status
       if (user) {
         const { data: completions } = await supabase
           .from('completions')
@@ -86,6 +85,7 @@ export default function UnitPage() {
       }
     } catch (error) {
       console.error('Error refreshing resources:', error);
+      toast.error('Failed to refresh resources');
     }
   };
 
@@ -154,6 +154,19 @@ export default function UnitPage() {
     setResourceDescription('');
     setResourceDeadline('');
     setResourceFile(null);
+    setEditResourceId(null);
+    setCurrentResource(null);
+    setUploadDialogOpen(true);
+  };
+
+  const handleEditResource = (resource: Resource) => {
+    setResourceType(resource.type as 'assignment' | 'note' | 'past_paper');
+    setResourceTitle(resource.title);
+    setResourceDescription(resource.description || '');
+    setResourceDeadline(resource.deadline ? new Date(resource.deadline).toISOString().slice(0, 16) : '');
+    setResourceFile(null);
+    setEditResourceId(resource.id);
+    setCurrentResource(resource);
     setUploadDialogOpen(true);
   };
 
@@ -171,25 +184,27 @@ export default function UnitPage() {
       return;
     }
 
-    if ((resourceType === 'note' || resourceType === 'past_paper') && !resourceFile) {
+    if ((resourceType === 'note' || resourceType === 'past_paper') && !resourceFile && !editResourceId) {
       toast.error('Please upload a file for this resource type');
       return;
     }
     
     try {
       setUploading(true);
-      toast.info('Uploading your resource, please wait...');
+      toast.info('Processing your resource, please wait...');
       
       let fileUrl = null;
-      if (resourceFile) {
+      
+      if (editResourceId && currentResource && !resourceFile) {
+        fileUrl = currentResource.file_url;
+      } 
+      else if (resourceFile) {
         try {
           console.log('Starting file upload process...');
           
-          // Use a simpler path structure that works with our RLS policies
           const filePath = `public/${Date.now()}_${resourceFile.name.replace(/\s+/g, '_')}`;
           console.log('Uploading to path:', filePath);
           
-          // Use our improved uploadFile helper function from supabase.ts
           const result = await uploadFile('resources', filePath, resourceFile);
           fileUrl = result.url;
           console.log('File uploaded successfully:', fileUrl);
@@ -202,9 +217,8 @@ export default function UnitPage() {
         }
       }
       
-      console.log('Creating resource record with file URL:', fileUrl);
+      console.log('Creating/updating resource record with file URL:', fileUrl);
       
-      // Create resource data
       const resourceData = {
         title: resourceTitle,
         description: resourceDescription,
@@ -213,50 +227,33 @@ export default function UnitPage() {
         unit_id: parseInt(unitId),
         user_id: user.id,
         type: resourceType,
-        likes: 0,
-        dislikes: 0
+        likes: editResourceId && currentResource ? currentResource.likes : 0,
+        dislikes: editResourceId && currentResource ? currentResource.dislikes : 0
       };
       
-      // Try the standard Supabase client first
-      try {
+      if (editResourceId) {
+        const { data: updatedResource, error: updateError } = await supabase
+          .from('resources')
+          .update(resourceData)
+          .eq('id', editResourceId)
+          .select()
+          .single();
+        
+        if (updateError) {
+          throw updateError;
+        }
+        
+        toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} updated successfully!`);
+      } 
+      else {
         const { data: resource, error: resourceError } = await supabase
           .from('resources')
           .insert(resourceData)
           .select()
           .single();
         
-        if (resourceError) throw resourceError;
-        
-        toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
-        
-        // Award points based on resource type
-        let pointsToAdd = 0;
-        switch(resourceType) {
-          case 'note': pointsToAdd = 50; break;
-          case 'assignment': pointsToAdd = 10; break;
-          case 'past_paper': pointsToAdd = 20; break;
-        }
-        
-        if (pointsToAdd > 0) {
-          await supabase
-            .from('users')
-            .update({ 
-              points: user.points + pointsToAdd 
-            })
-            .eq('id', user.id);
-        }
-        
-        // Refresh data instead of page reload to prevent logout
-        refreshResources();
-        setUploadDialogOpen(false);
-        
-      } catch (resourceError: any) {
-        console.error('Resource creation error:', resourceError);
-        
-        // Fall back to a direct fetch with custom headers if needed
-        if (resourceError.code === '42501') {
-          try {
-            console.log('Attempting direct API call for resource creation');
+        if (resourceError) {
+          if (resourceError.code === '42501') {
             const response = await fetch(`${SUPABASE_URL}/rest/v1/resources`, {
               method: 'POST',
               headers: {
@@ -272,23 +269,36 @@ export default function UnitPage() {
               const errorData = await response.json();
               throw new Error(`API error: ${JSON.stringify(errorData)}`);
             }
-            
-            toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
-            
-            // Refresh data instead of page reload to prevent logout
-            refreshResources();
-            setUploadDialogOpen(false);
-          } catch (fetchError) {
-            console.error('Fetch API fallback failed:', fetchError);
-            throw fetchError;
+          } else {
+            throw resourceError;
           }
-        } else {
-          throw resourceError;
+        }
+        
+        toast.success(`${resourceType.charAt(0).toUpperCase() + resourceType.slice(1)} uploaded successfully!`);
+        
+        let pointsToAdd = 0;
+        switch(resourceType) {
+          case 'note': pointsToAdd = 50; break;
+          case 'assignment': pointsToAdd = 10; break;
+          case 'past_paper': pointsToAdd = 20; break;
+        }
+        
+        if (pointsToAdd > 0) {
+          await supabase
+            .from('users')
+            .update({ 
+              points: user.points + pointsToAdd 
+            })
+            .eq('id', user.id);
         }
       }
+      
+      refreshResources();
+      setUploadDialogOpen(false);
+      
     } catch (error) {
-      console.error('Error uploading resource:', error);
-      toast.error('Failed to upload resource. Please try again later.');
+      console.error('Error uploading/updating resource:', error);
+      toast.error('Failed to process resource. Please try again later.');
     } finally {
       setUploading(false);
       setUploadDialogOpen(false);
@@ -296,16 +306,18 @@ export default function UnitPage() {
   };
 
   const handleCompleteResource = async (resourceId: number) => {
-    if (!user) return;
+    if (!user) {
+      toast.error('You must be logged in to complete assignments');
+      return;
+    }
     
     try {
-      // Check if already completed
       if (completedResourceIds.includes(resourceId)) {
-        toast.info('You have already completed this resource');
+        toast.info('You have already completed this assignment');
         return;
       }
       
-      const { error } = await supabase
+      const { error: completionError } = await supabase
         .from('completions')
         .insert({
           user_id: user.id,
@@ -313,9 +325,31 @@ export default function UnitPage() {
           completed_at: new Date().toISOString()
         });
       
-      if (error) throw error;
+      if (completionError) {
+        if (completionError.code === '42501') {
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+              user_id: user.id,
+              resource_id: resourceId,
+              completed_at: new Date().toISOString()
+            })
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`API error: ${JSON.stringify(errorData)}`);
+          }
+        } else {
+          throw completionError;
+        }
+      }
       
-      // Update points
       await supabase
         .from('users')
         .update({ 
@@ -327,17 +361,6 @@ export default function UnitPage() {
       
       toast.success('Assignment marked as complete!');
       
-      // Update the user object to reflect point changes
-      const { data: updatedUser } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-        
-      if (updatedUser) {
-        // Manually update Auth context - we can't directly update it, but we can trigger a refresh
-        // The next time a protected route is accessed, it will get the updated user data
-      }
     } catch (error) {
       console.error('Error marking assignment as complete:', error);
       toast.error('Failed to mark assignment as complete');
@@ -434,6 +457,7 @@ export default function UnitPage() {
               completedResourceIds={completedResourceIds}
               onCompleteResource={handleCompleteResource}
               onDeleteResource={handleDeleteResource}
+              onEditResource={handleEditResource}
               emptyMessage="No assignments available for this unit yet."
             />
           </TabsContent>
@@ -448,6 +472,7 @@ export default function UnitPage() {
               resources={resources.notes} 
               creators={creators}
               onDeleteResource={handleDeleteResource}
+              onEditResource={handleEditResource}
               emptyMessage="No notes available for this unit yet."
             />
           </TabsContent>
@@ -462,6 +487,7 @@ export default function UnitPage() {
               resources={resources.past_papers} 
               creators={creators}
               onDeleteResource={handleDeleteResource}
+              onEditResource={handleEditResource}
               emptyMessage="No past papers available for this unit yet."
             />
           </TabsContent>
@@ -491,7 +517,7 @@ export default function UnitPage() {
                             </div>
                             <Avatar className="h-8 w-8">
                               <AvatarImage src={student.profile_picture_url} />
-                              <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                              <AvatarFallback>{student.name?.slice(0, 2).toUpperCase() || 'ST'}</AvatarFallback>
                             </Avatar>
                             <div>
                               <p className="text-sm font-medium leading-none">{student.name}</p>
@@ -529,14 +555,16 @@ export default function UnitPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Upload {resourceType === 'assignment' 
+              {editResourceId ? 'Edit' : 'Upload'} {resourceType === 'assignment' 
                 ? 'Assignment' 
                 : resourceType === 'note' 
                   ? 'Notes' 
                   : 'Past Paper'}
             </DialogTitle>
             <DialogDescription>
-              Share resources with your classmates to earn points.
+              {editResourceId 
+                ? 'Update resource details' 
+                : 'Share resources with your classmates to earn points'}
             </DialogDescription>
           </DialogHeader>
           
@@ -577,17 +605,19 @@ export default function UnitPage() {
             
             <div className="space-y-2">
               <Label htmlFor="file">
-                File {resourceType === 'assignment' ? '(optional)' : '(required)'}
+                {editResourceId 
+                  ? `File (${currentResource?.file_url ? 'Change the existing file' : 'Add a file'})` 
+                  : `File ${resourceType === 'assignment' ? '(optional)' : '(required)'}`}
               </Label>
               <Input 
                 id="file" 
                 type="file"
                 onChange={handleFileChange}
-                required={resourceType !== 'assignment'}
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.csv,.jpg,.jpeg,.png"
+                required={!editResourceId && resourceType !== 'assignment' && !currentResource?.file_url}
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.csv,.jpg,.jpeg,.png,.mp4,.mp3,.wav"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Supported files: PDF, Word, Excel, PowerPoint, Text, Images, Zip, and more
+                Supported files: Documents, Spreadsheets, Presentations, Images, Videos, Audio, Archives and Text files
               </p>
             </div>
             
@@ -596,7 +626,7 @@ export default function UnitPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={uploading}>
-                {uploading ? 'Uploading...' : 'Upload'}
+                {uploading ? 'Processing...' : editResourceId ? 'Update' : 'Upload'}
               </Button>
             </DialogFooter>
           </form>
