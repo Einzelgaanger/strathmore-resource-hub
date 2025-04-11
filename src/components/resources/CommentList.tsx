@@ -64,17 +64,46 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       
       // Award points for commenting
       try {
-        await supabase.rpc('increment_points', { 
-          user_id: user.id, 
-          amount: 1 
-        });
-        toast.success('+1 point for commenting!');
+        // Use a direct database update instead of the RPC function
+        const { error: pointsError } = await supabase
+          .from('users')
+          .update({ points: (user.points || 0) + 1 })
+          .eq('id', user.id);
+          
+        if (!pointsError) {
+          toast.success('+1 point for commenting!');
+        } else {
+          console.warn('Could not update points for comment (non-critical):', pointsError);
+        }
       } catch (pointsError) {
         console.warn('Could not update points for comment (non-critical):', pointsError);
       }
       
       console.log('Comment added successfully:', data);
-      onCommentAdded(data);
+      
+      // Convert the returned data to match the Comment type
+      const commentData: Comment = {
+        id: data.id,
+        content: data.content,
+        resource_id: data.resource_id,
+        user_id: data.user_id,
+        created_at: data.created_at,
+        user: data.user ? {
+          id: data.user.id,
+          name: data.user.name,
+          admission_number: data.user.admission_number,
+          email: '',
+          class_instance_id: 0,
+          is_admin: false,
+          is_super_admin: false,
+          points: 0,
+          rank: 0,
+          created_at: '',
+          profile_picture_url: data.user.profile_picture_url
+        } : undefined
+      };
+      
+      onCommentAdded(commentData);
       setNewComment('');
       toast.success('Comment added successfully');
     } catch (error) {

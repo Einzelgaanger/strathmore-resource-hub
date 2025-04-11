@@ -521,6 +521,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      increment_points: {
+        Args: { user_id: string; amount: number }
+        Returns: number
+      }
       reset_auth_user_passwords: {
         Args: Record<PropertyKey, never>
         Returns: undefined

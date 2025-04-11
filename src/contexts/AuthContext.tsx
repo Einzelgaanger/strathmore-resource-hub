@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +17,7 @@ interface AuthContextType {
   updateProfilePicture: (userId: string, file: File) => Promise<string>;
   updateProfile: (userData: Partial<User>) => Promise<boolean>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
+  updateUserProfile: (userData: Partial<User>) => Promise<{ data?: User; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -243,6 +243,57 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const changePassword = updatePassword;
 
+  const updateUserProfile = async (userData: Partial<User>) => {
+    if (!user || !user.id) {
+      console.error('Cannot update profile: No user logged in');
+      return { error: 'No user logged in' };
+    }
+
+    try {
+      // Make sure we have the required fields in our update
+      const updatePayload: any = {
+        ...userData,
+        id: user.id,
+      };
+      
+      // Ensure required fields are included
+      if (!updatePayload.admission_number) {
+        updatePayload.admission_number = user.admission_number;
+      }
+      
+      if (!updatePayload.email) {
+        updatePayload.email = user.email;
+      }
+      
+      if (!updatePayload.name) {
+        updatePayload.name = user.name;
+      }
+      
+      const { data, error } = await supabase
+        .from('users')
+        .update(updatePayload)
+        .eq('id', user.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating user profile:', error);
+        return { error };
+      }
+
+      // Update the user context with new data
+      setUser({
+        ...user,
+        ...data
+      });
+
+      return { data };
+    } catch (error) {
+      console.error('Error in updateUserProfile:', error);
+      return { error };
+    }
+  };
+
   useEffect(() => {
     const checkForExistingSession = async () => {
       setLoading(true);
@@ -321,7 +372,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     updatePassword,
     updateProfilePicture,
     updateProfile,
-    changePassword
+    changePassword,
+    updateUserProfile
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

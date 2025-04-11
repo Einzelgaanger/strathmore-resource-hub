@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Resource, User } from '@/lib/types';
-import { ResourceCard } from './ResourceCard';
+import ResourceCard from './ResourceCard';
 import { toast } from 'sonner';
 
 interface ResourceGridProps {
