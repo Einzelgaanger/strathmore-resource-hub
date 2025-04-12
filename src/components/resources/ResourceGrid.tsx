@@ -3,6 +3,7 @@ import React from 'react';
 import { Resource, User } from '@/lib/types';
 import ResourceCard from './ResourceCard';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ResourceGridProps {
   resources: Resource[];
@@ -26,7 +27,16 @@ export function ResourceGrid({
   if (!resources.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <p className="text-muted-foreground">{emptyMessage}</p>
+        <div className="fading-in text-center p-6 rounded-lg bg-muted/30">
+          <p className="text-muted-foreground">{emptyMessage}</p>
+          <div className="mt-4 floating">
+            <svg className="h-16 w-16 mx-auto text-muted-foreground/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 14A4.5 4.5 0 0 1 3.5 9.5V4a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5.5A4.5 4.5 0 0 1 8 14Z" />
+              <path d="M16 14a4.5 4.5 0 0 1-4.5-4.5V4a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5.5A4.5 4.5 0 0 1 16 14Z" />
+              <path d="M8 14v2a5 5 0 0 0 10 0v-2" />
+            </svg>
+          </div>
+        </div>
       </div>
     );
   }
@@ -39,9 +49,37 @@ export function ResourceGrid({
     }
   };
   
-  const handleDelete = (resourceId: number) => {
+  // Enhanced delete functionality to ensure resource is actually deleted
+  const handleDelete = async (resourceId: number) => {
     if (onDeleteResource) {
-      onDeleteResource(resourceId);
+      try {
+        // First delete any related completions
+        const { error: completionsError } = await supabase
+          .from('completions')
+          .delete()
+          .eq('resource_id', resourceId);
+          
+        if (completionsError) {
+          console.error('Error deleting completions:', completionsError);
+        }
+        
+        // Delete any related comments
+        const { error: commentsError } = await supabase
+          .from('comments')
+          .delete()
+          .eq('resource_id', resourceId);
+          
+        if (commentsError) {
+          console.error('Error deleting comments:', commentsError);
+        }
+          
+        // Now delete the resource itself
+        onDeleteResource(resourceId);
+        
+      } catch (error) {
+        console.error('Error in delete process:', error);
+        toast.error('Error deleting resource. Please try again.');
+      }
     } else {
       toast.success('Resource deleted successfully!');
     }
@@ -49,26 +87,27 @@ export function ResourceGrid({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {resources.map((resource) => (
-        <ResourceCard
-          key={resource.id}
-          resource={resource}
-          user={creators[resource.user_id] || {
-            id: 'unknown',
-            admission_number: '',
-            email: '',
-            name: 'Unknown User',
-            class_instance_id: 0,
-            is_admin: false,
-            is_super_admin: false,
-            points: 0,
-            rank: 0,
-            created_at: ''
-          }}
-          completed={completedResourceIds.includes(resource.id)}
-          onComplete={() => handleComplete(resource.id)}
-          onDelete={() => handleDelete(resource.id)}
-        />
+      {resources.map((resource, index) => (
+        <div key={resource.id} className={`sliding-in ${index % 2 === 0 ? 'from-left' : 'from-right'}`} style={{animationDelay: `${index * 0.1}s`}}>
+          <ResourceCard
+            resource={resource}
+            user={creators[resource.user_id] || {
+              id: 'unknown',
+              admission_number: '',
+              email: '',
+              name: 'Unknown User',
+              class_instance_id: 0,
+              is_admin: false,
+              is_super_admin: false,
+              points: 0,
+              rank: 0,
+              created_at: ''
+            }}
+            completed={completedResourceIds.includes(resource.id)}
+            onComplete={() => handleComplete(resource.id)}
+            onDelete={() => handleDelete(resource.id)}
+          />
+        </div>
       ))}
     </div>
   );

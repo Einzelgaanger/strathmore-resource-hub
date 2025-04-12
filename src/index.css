@@ -5,7 +5,7 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
     --card: 0 0% 100%;
@@ -43,6 +43,13 @@
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 213 100% 32%;
     --sidebar-ring: 212 100% 35%;
+    
+    /* Enhanced vibrant colors */
+    --vibrant-blue: 210 100% 50%;
+    --vibrant-green: 142 76% 36%;
+    --vibrant-yellow: 48 100% 50%;
+    --vibrant-red: 0 84% 60%;
+    --vibrant-purple: 265 83% 45%;
   }
 
   .dark {
@@ -82,6 +89,13 @@
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 213 60% 15%;
     --sidebar-ring: 212 70% 35%;
+    
+    /* Enhanced vibrant colors - dark mode */
+    --vibrant-blue: 210 100% 60%;
+    --vibrant-green: 142 76% 45%;
+    --vibrant-yellow: 48 100% 60%;
+    --vibrant-red: 0 84% 70%;
+    --vibrant-purple: 265 83% 55%;
   }
 }
 
@@ -144,4 +158,80 @@
   .rank-badge-legend {
     @apply bg-rank-legend text-white;
   }
+  
+  /* Mobile responsive enhancements */
+  .mobile-friendly-container {
+    @apply px-4 py-2 sm:px-6 sm:py-4;
+  }
+  
+  .mobile-friendly-button {
+    @apply min-h-[2.5rem] min-w-[2.5rem] sm:min-h-[3rem] flex items-center justify-center;
+  }
+  
+  /* Vibrant UI elements */
+  .vibrant-card {
+    @apply bg-gradient-to-br from-white to-gray-100 dark:from-gray-800 dark:to-gray-900 
+           shadow-md hover:shadow-xl transition-all duration-300 
+           border border-gray-200 dark:border-gray-700;
+  }
+  
+  .vibrant-button {
+    @apply bg-gradient-to-r from-[hsl(var(--vibrant-blue))] to-[hsl(var(--vibrant-purple))] 
+           text-white hover:opacity-90 transition-all duration-300;
+  }
+  
+  .vibrant-badge {
+    @apply bg-gradient-to-r from-[hsl(var(--vibrant-yellow))] to-[hsl(var(--vibrant-green))] 
+           text-white font-medium;
+  }
+  
+  /* Animations */
+  .floating {
+    animation: floating 3s ease-in-out infinite;
+  }
+  
+  .pulsing {
+    animation: pulsing 2s ease-in-out infinite;
+  }
+  
+  .sliding-in {
+    animation: slidingIn 0.5s ease-out forwards;
+  }
+  
+  .fading-in {
+    animation: fadingIn 0.7s ease-out forwards;
+  }
+  
+  .bounce-in {
+    animation: bounceIn 0.5s ease-out forwards;
+  }
+}
+
+/* Animation keyframes */
+@keyframes floating {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes pulsing {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.9; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slidingIn {
+  0% { transform: translateX(-50px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadingIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes bounceIn {
+  0% { transform: scale(0.5); opacity: 0; }
+  80% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
 }

@@ -1,12 +1,12 @@
 
-import { FC, useState } from 'react';
+import { FC, useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Resource, User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import { Download, ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
+import { Download, ThumbsUp, ThumbsDown, MessageSquare, Check, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -36,8 +36,38 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const [comments, setComments] = useState<any[]>([]);
   const [hasLiked, setHasLiked] = useState(false);
   const [hasDisliked, setHasDisliked] = useState(false);
+  const [isOverdue, setIsOverdue] = useState(false);
+
+  // Check if resource is overdue
+  useEffect(() => {
+    if (resource.deadline) {
+      setIsOverdue(new Date(resource.deadline) < new Date());
+    }
+  }, [resource.deadline]);
+
+  // Check if user has liked or disliked this resource before
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    // Check user interaction from local storage to avoid additional DB queries
+    const userInteractions = localStorage.getItem(`resource-interactions-${currentUser.id}`);
+    if (userInteractions) {
+      try {
+        const interactions = JSON.parse(userInteractions);
+        setHasLiked(interactions[`liked-${resource.id}`] || false);
+        setHasDisliked(interactions[`disliked-${resource.id}`] || false);
+      } catch (e) {
+        console.error('Error parsing user interactions', e);
+      }
+    }
+  }, [currentUser, resource.id]);
 
   const fetchComments = async () => {
+    if (!currentUser) {
+      toast.error('You must be logged in to view comments');
+      return;
+    }
+    
     try {
       const { data, error } = await supabase
         .from('comments')
@@ -57,6 +87,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
       setComments(data || []);
     } catch (error) {
       console.error('Error fetching comments:', error);
+      toast.error('Could not load comments. Please try again.');
     }
   };
 
@@ -68,6 +99,28 @@ const ResourceCard: FC<ResourceCardProps> = ({
     
     // Open the file in a new tab
     window.open(resource.file_url, '_blank');
+  };
+
+  const updateUserInteraction = (interaction: 'liked' | 'disliked') => {
+    if (!currentUser) return;
+    
+    try {
+      // Store interaction in local storage
+      const userInteractions = localStorage.getItem(`resource-interactions-${currentUser.id}`) || '{}';
+      const interactions = JSON.parse(userInteractions);
+      
+      if (interaction === 'liked') {
+        interactions[`liked-${resource.id}`] = true;
+        interactions[`disliked-${resource.id}`] = false;
+      } else {
+        interactions[`disliked-${resource.id}`] = true;
+        interactions[`liked-${resource.id}`] = false;
+      }
+      
+      localStorage.setItem(`resource-interactions-${currentUser.id}`, JSON.stringify(interactions));
+    } catch (e) {
+      console.error('Error updating user interactions', e);
+    }
   };
 
   const handleLike = async () => {
@@ -137,6 +190,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       setLikes(newLikes);
       setHasLiked(true);
+      updateUserInteraction('liked');
+      
     } catch (error) {
       console.error('Error liking resource:', error);
       toast.error('Failed to like resource');
@@ -212,6 +267,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       setDislikes(newDislikes);
       setHasDisliked(true);
+      updateUserInteraction('disliked');
+      
     } catch (error) {
       console.error('Error disliking resource:', error);
       toast.error('Failed to dislike resource');
@@ -244,9 +301,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
         setIsCompleted(true);
         return;
       }
-      
-      // Check if the resource is overdue
-      const isOverdue = resource.deadline ? new Date(resource.deadline) < new Date() : false;
       
       // Apply points modification based on timeliness
       let pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
@@ -326,11 +380,13 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const handleAddComment = (newComment: any) => {
     setComments([newComment, ...comments]);
   };
-
-  const isOverdue = resource.deadline ? new Date(resource.deadline) < new Date() : false;
+  
+  const cardClasses = `vibrant-card transform hover:-translate-y-1 h-full flex flex-col ${
+    isOverdue && resource.type === 'assignment' && !isCompleted ? 'border-red-300' : ''
+  }`;
   
   return (
-    <Card className="h-full flex flex-col">
+    <Card className={cardClasses}>
       <CardHeader>
         <div className="flex justify-between">
           <div className="space-y-1">
@@ -339,7 +395,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
               Posted by {user?.name || 'Unknown User'} {resource.created_at && `• ${formatDistanceToNow(new Date(resource.created_at), { addSuffix: true })}`}
             </p>
           </div>
-          <Badge variant={getVariantForType(resource.type)}>
+          <Badge variant={getVariantForType(resource.type)} className="pulsing">
             {formatResourceType(resource.type)}
           </Badge>
         </div>
@@ -349,20 +405,23 @@ const ResourceCard: FC<ResourceCardProps> = ({
         
         {resource.deadline && (
           <div className="mt-2">
-            <p className={`text-xs font-semibold ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+            <p className={`text-xs font-semibold flex items-center ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {isOverdue && <AlertTriangle className="h-3 w-3 mr-1 inline" />}
               {isOverdue ? 'Overdue' : 'Deadline'}: {new Date(resource.deadline).toLocaleDateString()}
             </p>
           </div>
         )}
         
         {isCompleted && (
-          <Badge variant="outline" className="mt-2 bg-green-50 text-green-700 border-green-200">
+          <Badge variant="outline" className="mt-2 bg-green-50 text-green-700 border-green-200 flex items-center w-fit">
+            <Check className="h-3 w-3 mr-1" />
             Completed
           </Badge>
         )}
         
         {isOverdue && resource.type === 'assignment' && !isCompleted && (
-          <Badge variant="outline" className="mt-2 bg-red-50 text-red-700 border-red-200">
+          <Badge variant="outline" className="mt-2 bg-red-50 text-red-700 border-red-200 flex items-center w-fit">
+            <AlertTriangle className="h-3 w-3 mr-1" />
             Overdue
           </Badge>
         )}
@@ -370,9 +429,9 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       <CardFooter className="border-t pt-4 flex flex-wrap gap-2">
         {resource.file_url && (
-          <Button size="sm" variant="outline" onClick={handleDownload}>
+          <Button size="sm" variant="outline" onClick={handleDownload} className="mobile-friendly-button">
             <Download className="h-4 w-4 mr-1" />
-            Download
+            <span className="hidden sm:inline">Download</span>
           </Button>
         )}
         
@@ -381,9 +440,10 @@ const ResourceCard: FC<ResourceCardProps> = ({
           variant={hasLiked ? "default" : "ghost"}
           onClick={handleLike}
           disabled={loading || hasLiked}
+          className="mobile-friendly-button"
         >
-          <ThumbsUp className="h-4 w-4 mr-1" />
-          {likes}
+          <ThumbsUp className={`h-4 w-4 ${hasLiked ? 'mr-1' : 'mr-1'}`} />
+          <span>{likes}</span>
         </Button>
         
         <Button 
@@ -391,9 +451,10 @@ const ResourceCard: FC<ResourceCardProps> = ({
           variant={hasDisliked ? "default" : "ghost"}
           onClick={handleDislike}
           disabled={loading || hasDisliked}
+          className="mobile-friendly-button"
         >
-          <ThumbsDown className="h-4 w-4 mr-1" />
-          {dislikes}
+          <ThumbsDown className={`h-4 w-4 ${hasDisliked ? 'mr-1' : 'mr-1'}`} />
+          <span>{dislikes}</span>
         </Button>
         
         <Button
@@ -401,12 +462,13 @@ const ResourceCard: FC<ResourceCardProps> = ({
           variant="ghost"
           onClick={handleCommentClick}
           disabled={loading}
+          className="mobile-friendly-button"
         >
           <MessageSquare className="h-4 w-4 mr-1" />
-          Comment
+          <span className="hidden sm:inline">Comment</span>
         </Button>
         
-        {resource.type === 'assignment' && !isCompleted && onComplete && (
+        {resource.type === 'assignment' && !isCompleted && onComplete && !isOverdue && (
           <Button 
             size="sm" 
             variant="outline" 
@@ -422,7 +484,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
           <Button 
             size="sm" 
             variant="outline" 
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive ml-auto"
             onClick={onDelete}
             disabled={loading}
           >
@@ -434,7 +496,9 @@ const ResourceCard: FC<ResourceCardProps> = ({
       <Dialog open={commentsOpen} onOpenChange={setCommentsOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Comments on "{resource.title}"</DialogTitle>
+            <DialogTitle>
+              Comments on "{resource.title}"
+            </DialogTitle>
           </DialogHeader>
           <CommentList 
             comments={comments} 

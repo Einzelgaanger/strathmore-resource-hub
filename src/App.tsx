@@ -42,7 +42,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             
-            <Route path="/unit/:unitId" element={
+            <Route path="/units/:unitId" element={
               <ProtectedRoute>
                 <UnitPage />
               </ProtectedRoute>

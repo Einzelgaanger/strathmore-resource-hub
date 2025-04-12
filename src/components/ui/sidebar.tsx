@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { useMobileNav } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
@@ -31,31 +31,27 @@ interface Unit {
 
 export function Sidebar() {
   const location = useLocation();
-  const isMobile = useMobileNav();
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(isMobile);
   const [unitsExpanded, setUnitsExpanded] = useState(true);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loadingUnits, setLoadingUnits] = useState(true);
   const { user, logout } = useAuth();
 
-  // Toggle sidebar collapsed state
   const toggleSidebar = () => {
     setCollapsed(!collapsed);
   };
 
-  // Toggle units section expanded state
   const toggleUnits = () => {
     setUnitsExpanded(!unitsExpanded);
   };
 
-  // Handle mobile sidebar closing when route changes
   useEffect(() => {
     if (isMobile) {
       setCollapsed(true);
     }
   }, [location.pathname, isMobile]);
 
-  // Fetch user's units on component mount
   useEffect(() => {
     const fetchUnits = async () => {
       if (!user) return;
@@ -84,14 +80,12 @@ export function Sidebar() {
     fetchUnits();
   }, [user]);
 
-  // Determine if a link is active
   const isActive = (path: string) => {
     return location.pathname === path;
   };
 
   return (
     <>
-      {/* Mobile overlay */}
       {isMobile && !collapsed && (
         <div 
           className="fixed inset-0 bg-black/50 z-40" 
@@ -99,14 +93,12 @@ export function Sidebar() {
         ></div>
       )}
       
-      {/* Sidebar */}
       <aside 
         className={`
           fixed top-0 left-0 h-full bg-white border-r z-50 transition-all duration-300 flex flex-col
           ${collapsed ? 'w-0 md:w-16 overflow-hidden' : 'w-64'}
         `}
       >
-        {/* Logo and toggle button */}
         <div className={`flex items-center h-16 px-4 border-b ${collapsed ? 'justify-center' : 'justify-between'}`}>
           {!collapsed && (
             <Link to="/dashboard" className="flex items-center gap-2">
@@ -121,10 +113,8 @@ export function Sidebar() {
           </button>
         </div>
         
-        {/* Sidebar content */}
         <ScrollArea className="flex-1">
           <div className="py-4">
-            {/* User info */}
             <div className={`px-3 pb-4 ${collapsed ? 'text-center' : ''}`}>
               <div className={collapsed ? 'flex justify-center' : 'flex items-center gap-3'}>
                 <Avatar>
@@ -153,7 +143,6 @@ export function Sidebar() {
             
             <Separator />
             
-            {/* Navigation links */}
             <nav className="px-2 mt-4 space-y-1">
               <Link
                 to="/dashboard"
@@ -167,7 +156,6 @@ export function Sidebar() {
                 {!collapsed && <span>Dashboard</span>}
               </Link>
               
-              {/* Units section */}
               <div className="space-y-1">
                 <div 
                   className="flex items-center p-2 rounded-md hover:bg-gray-100 text-gray-700 cursor-pointer"
@@ -241,7 +229,6 @@ export function Sidebar() {
         </ScrollArea>
       </aside>
       
-      {/* Mobile trigger button */}
       {isMobile && collapsed && (
         <button 
           className="fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md"
