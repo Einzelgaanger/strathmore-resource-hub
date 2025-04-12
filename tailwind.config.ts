@@ -85,6 +85,18 @@ export default {
 					maven: '#0277BD',
 					elite: '#01579B',
 					legend: '#1A237E'
+				},
+				// New vibrant colors palette
+				vibrant: {
+					red: "#FF3B30",
+					green: "#34C759",
+					blue: "#007AFF",
+					purple: "#AF52DE",
+					yellow: "#FFCC00",
+					orange: "#FF9500",
+					pink: "#FF2D55",
+					teal: "#5AC8FA",
+					indigo: "#5856D6",
 				}
 			},
 			borderRadius: {
@@ -136,6 +148,20 @@ export default {
 				'pulse-light': {
 					'0%, 100%': { opacity: '1' },
 					'50%': { opacity: '0.7' }
+				},
+				'float': {
+					'0%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-10px)' },
+					'100%': { transform: 'translateY(0)' }
+				},
+				'float-reverse': {
+					'0%': { transform: 'translateY(0) rotate(0deg)' },
+					'50%': { transform: 'translateY(-10px) rotate(5deg)' },
+					'100%': { transform: 'translateY(0) rotate(0deg)' }
+				},
+				'bounce-light': {
+					'0%, 100%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-5px)' }
 				}
 			},
 			animation: {
@@ -144,7 +170,10 @@ export default {
 				'fade-in': 'fade-in 0.3s ease-out',
 				'scale-in': 'scale-in 0.2s ease-out',
 				'slide-in': 'slide-in 0.3s ease-out',
-				'pulse-light': 'pulse-light 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+				'pulse-light': 'pulse-light 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+				'float': 'float 6s ease-in-out infinite',
+				'float-reverse': 'float-reverse 7s ease-in-out infinite',
+				'bounce-light': 'bounce-light 2s infinite'
 			}
 		}
 	},

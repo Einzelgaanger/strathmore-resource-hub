@@ -1,13 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { LogOut, User as UserIcon, Home, Book, ChevronLeft, Menu, Loader2 } from 'lucide-react';
+import { LogOut, User as UserIcon, Home, Book, ChevronLeft, Menu, Loader2, Settings, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Unit } from '@/lib/types';
 import { getUnitsForClassInstance } from '@/lib/supabase';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { toast } from 'sonner';
 
 interface SidebarLinkProps {
   href: string;
@@ -24,8 +27,10 @@ const SidebarLink = ({ href, icon, title, subtitle, active }: SidebarLinkProps) 
     <Button
       variant="ghost"
       className={cn(
-        "w-full justify-start gap-2 font-normal",
-        active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground"
+        "w-full justify-start gap-2 font-normal tap-target transition-all",
+        active ? 
+          "bg-vibrant-blue text-white hover:bg-vibrant-blue/90" : 
+          "text-sidebar-foreground hover:bg-sidebar-accent/20"
       )}
       onClick={() => navigate(href)}
     >
@@ -46,9 +51,19 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, units: propUnits }: DashboardLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [expanded, setExpanded] = useState(true);
+  const isMobile = useIsMobile();
+  const [expanded, setExpanded] = useState(!isMobile);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  useEffect(() => {
+    // Close sidebar on mobile when route changes
+    if (isMobile) {
+      setExpanded(false);
+      setShowMobileMenu(false);
+    }
+  }, [location.pathname, isMobile]);
 
   useEffect(() => {
     const fetchUnits = async () => {
@@ -70,6 +85,7 @@ export function DashboardLayout({ children, units: propUnits }: DashboardLayoutP
         setUnits(data);
       } catch (error) {
         console.error('Failed to fetch units:', error);
+        toast.error("Failed to load your units. Please refresh.");
       } finally {
         setLoading(false);
       }
@@ -78,104 +94,151 @@ export function DashboardLayout({ children, units: propUnits }: DashboardLayoutP
     fetchUnits();
   }, [user, propUnits]);
 
+  const handleLogout = () => {
+    toast.success('Logging out...');
+    logout();
+  };
+
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Mobile overlay */}
+      {isMobile && expanded && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-20 animate-fade-in" 
+          onClick={() => setExpanded(false)}
+        />
+      )}
+      
       {/* Sidebar */}
       <aside 
         className={cn(
-          "bg-sidebar flex flex-col h-screen fixed inset-y-0 left-0 z-10 transition-all duration-300 border-r border-sidebar-border",
-          expanded ? "w-64" : "w-16"
+          "bg-white flex flex-col h-screen fixed inset-y-0 left-0 z-30 transition-all duration-300 border-r",
+          expanded ? "w-64" : "w-0 md:w-16",
+          isMobile && !expanded ? "shadow-none" : "shadow-md",
         )}
       >
-        <div className="flex items-center justify-between p-4">
+        <div className="flex items-center justify-between p-4 h-16 border-b">
           {expanded && (
-            <div className="font-bold text-xl text-sidebar-foreground">
+            <div className="font-bold text-xl text-vibrant-blue">
               myStrath
             </div>
           )}
           <Button 
             variant="ghost" 
             size="icon"
-            className="text-sidebar-foreground"
+            className="text-vibrant-blue hover:bg-blue-50"
             onClick={() => setExpanded(!expanded)}
           >
             {expanded ? <ChevronLeft size={20} /> : <Menu size={20} />}
           </Button>
         </div>
-
-        <Separator className="bg-sidebar-border" />
         
         <div className="flex-1 overflow-y-auto py-4 px-2">
           <nav className="space-y-1">
             <SidebarLink 
               href="/dashboard" 
-              icon={<Home size={20} />} 
+              icon={<Home size={20} className="text-vibrant-blue" />} 
               title="Dashboard" 
               active={location.pathname === '/dashboard'} 
             />
             
             {loading ? (
               <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-sidebar-foreground/70" />
+                <Loader2 className="h-5 w-5 animate-spin text-vibrant-blue" />
               </div>
             ) : (
               units.map((unit) => (
                 <SidebarLink 
                   key={unit.id}
                   href={`/unit/${unit.id}`}
-                  icon={<Book size={20} />}
+                  icon={<Book size={20} className="text-vibrant-green" />}
                   title={expanded ? unit.name : unit.code}
                   subtitle={expanded ? unit.code : undefined}
-                  active={location.pathname === `/unit/${unit.id}`}
+                  active={location.pathname === `/unit/${unit.id}` || location.pathname === `/units/${unit.id}`}
                 />
               ))
             )}
             
             <SidebarLink 
               href="/profile" 
-              icon={<UserIcon size={20} />} 
+              icon={<UserIcon size={20} className="text-vibrant-purple" />} 
               title="My Profile" 
               active={location.pathname === '/profile'} 
             />
           </nav>
         </div>
         
-        <div className="p-4 border-t border-sidebar-border">
-          {user && (
-            <div className="flex items-center gap-3">
-              <Avatar>
+        <div className="p-4 border-t">
+          {user && expanded && (
+            <div className="flex items-center gap-3 mb-3">
+              <Avatar className="border-2 border-vibrant-blue">
                 <AvatarImage src={user.profile_picture_url || undefined} />
-                <AvatarFallback className="bg-primary text-primary-foreground">
-                  {user.name.slice(0, 2).toUpperCase()}
+                <AvatarFallback className="bg-vibrant-blue text-white">
+                  {user.name ? user.name.slice(0, 2).toUpperCase() : 'U'}
                 </AvatarFallback>
               </Avatar>
               
-              {expanded && (
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-                  <p className="text-xs text-sidebar-foreground/70 truncate">{user.admission_number}</p>
-                </div>
-              )}
-              
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="text-sidebar-foreground hover:text-sidebar-foreground/80"
-                onClick={logout}
-              >
-                <LogOut size={18} />
-              </Button>
+              <div className="flex-1 overflow-hidden">
+                <p className="text-sm font-medium truncate">{user.name || 'User'}</p>
+                <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                  <Star size={12} className="text-vibrant-yellow" /> 
+                  {user.points || 0} points
+                </p>
+              </div>
             </div>
           )}
+          
+          <Button 
+            variant="ghost" 
+            className={cn(
+              "w-full justify-center gap-2 text-red-600 hover:bg-red-50 hover:text-red-700 tap-target",
+              !expanded && "rounded-full p-2 h-auto"
+            )}
+            onClick={handleLogout}
+          >
+            <LogOut size={20} />
+            {expanded && <span>Logout</span>}
+          </Button>
         </div>
       </aside>
 
+      {/* Mobile header */}
+      {isMobile && !expanded && (
+        <div className="fixed top-0 left-0 right-0 h-16 bg-white border-b z-20 flex items-center px-4 justify-between">
+          <Button 
+            variant="ghost" 
+            size="icon"
+            className="text-vibrant-blue"
+            onClick={() => setExpanded(true)}
+          >
+            <Menu size={24} />
+          </Button>
+          
+          <div className="font-bold text-xl text-vibrant-blue">
+            myStrath
+          </div>
+          
+          {user && (
+            <Avatar className="h-8 w-8 border-2 border-vibrant-blue">
+              <AvatarImage src={user.profile_picture_url || undefined} />
+              <AvatarFallback className="bg-vibrant-blue text-white text-xs">
+                {user.name ? user.name.slice(0, 2).toUpperCase() : 'U'}
+              </AvatarFallback>
+            </Avatar>
+          )}
+        </div>
+      )}
+
       {/* Main content */}
       <main className={cn(
-        "flex-1 transition-all duration-300",
-        expanded ? "ml-64" : "ml-16"
+        "flex-1 transition-all duration-300 min-h-screen bg-gray-50 page-transition",
+        expanded ? "md:ml-64" : "md:ml-16",
+        isMobile && "pt-16"
       )}>
-        <div className="container px-4 py-6 max-w-6xl">
+        <div className={cn(
+          "container px-4 py-6 max-w-6xl",
+          isMobile && "px-3 py-4"
+        )}>
           {children}
         </div>
       </main>

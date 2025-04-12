@@ -103,12 +103,51 @@
     }
   }
 
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  @keyframes bounce {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes rotate {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
   .animate-float {
     animation: float 6s ease-in-out infinite;
   }
 
   .animate-float-reverse {
     animation: float-reverse 7s ease-in-out infinite;
+  }
+
+  .animate-pulse-custom {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-bounce-custom {
+    animation: bounce 2s ease-in-out infinite;
+  }
+
+  .animate-rotate {
+    animation: rotate 10s linear infinite;
   }
 
   .text-gradient-primary {
@@ -119,10 +158,12 @@
 /* Floating animations */
 .floating-elements {
   z-index: -1;
+  pointer-events: none;
 }
 
 .floating-element {
   will-change: transform;
+  pointer-events: none;
 }
 
 /* Responsive improvements */
@@ -133,6 +174,39 @@
 
   .resource-card {
     @apply min-h-0 !important;
+  }
+  
+  /* Improve spacing on mobile */
+  .btn {
+    @apply py-2 px-3 text-sm;
+  }
+  
+  h1 {
+    @apply text-2xl;
+  }
+  
+  h2 {
+    @apply text-xl;
+  }
+  
+  .mobile-stack {
+    @apply flex-col;
+  }
+  
+  .mobile-full {
+    @apply w-full;
+  }
+  
+  .mobile-center {
+    @apply justify-center items-center text-center;
+  }
+  
+  .mobile-px-2 {
+    @apply px-2;
+  }
+  
+  .mobile-py-2 {
+    @apply py-2;
   }
 }
 
@@ -186,6 +260,21 @@ button {
     font-size: 0.875rem !important;
     padding: 0.5rem 0.75rem !important;
   }
+  
+  /* Fix sidebar on mobile */
+  .sidebar-mobile {
+    width: 100% !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 50 !important;
+  }
+  
+  /* Improve tap targets on mobile */
+  .tap-target {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
 }
 
 /* Add animation to the AnimatedDashboard component */
@@ -206,4 +295,91 @@ button {
 
 .floating {
   animation: float 6s ease-in-out infinite;
+}
+
+/* Vibrant colors */
+.text-vibrant-red {
+  color: #ff3b30;
+}
+
+.text-vibrant-green {
+  color: #34c759;
+}
+
+.text-vibrant-blue {
+  color: #007aff;
+}
+
+.text-vibrant-purple {
+  color: #af52de;
+}
+
+.text-vibrant-yellow {
+  color: #ffcc00;
+}
+
+.bg-vibrant-red {
+  background-color: #ff3b30;
+}
+
+.bg-vibrant-green {
+  background-color: #34c759;
+}
+
+.bg-vibrant-blue {
+  background-color: #007aff;
+}
+
+.bg-vibrant-purple {
+  background-color: #af52de;
+}
+
+.bg-vibrant-yellow {
+  background-color: #ffcc00;
+}
+
+/* Improved animations for mobile transitions */
+.page-transition {
+  animation: pageEnter 0.3s ease-out forwards;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fix for buttons and clickable elements */
+.clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.clickable:active {
+  transform: scale(0.98);
+}
+
+/* Add scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }

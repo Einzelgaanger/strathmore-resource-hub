@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -42,6 +41,14 @@ const App = () => (
               </ProtectedRoute>
             } />
             
+            {/* Fix the route to match unit links in sidebar */}
+            <Route path="/unit/:unitId" element={
+              <ProtectedRoute>
+                <UnitPage />
+              </ProtectedRoute>
+            } />
+            
+            {/* Keep original route for backward compatibility */}
             <Route path="/units/:unitId" element={
               <ProtectedRoute>
                 <UnitPage />

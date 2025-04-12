@@ -7,13 +7,26 @@ export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
 
   React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
+    const checkMobile = () => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
-    mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
+    
+    // Initial check
+    checkMobile()
+    
+    // Add event listener with debounce
+    let resizeTimer: ReturnType<typeof setTimeout>
+    const handleResize = () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(checkMobile, 100)
+    }
+    
+    window.addEventListener("resize", handleResize)
+    
+    return () => {
+      window.removeEventListener("resize", handleResize)
+      clearTimeout(resizeTimer)
+    }
   }, [])
 
   return !!isMobile
@@ -21,5 +34,5 @@ export function useIsMobile() {
 
 // For sidebar usage
 export function useMobileNav() {
-  return useIsMobile();
+  return useIsMobile()
 }
