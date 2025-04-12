@@ -34,6 +34,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const [isCompleted, setIsCompleted] = useState(completed);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
+  const [hasLiked, setHasLiked] = useState(false);
+  const [hasDisliked, setHasDisliked] = useState(false);
 
   const fetchComments = async () => {
     try {
@@ -69,6 +71,21 @@ const ResourceCard: FC<ResourceCardProps> = ({
   };
 
   const handleLike = async () => {
+    if (!currentUser) {
+      toast.error('You must be logged in to like resources');
+      return;
+    }
+
+    if (hasLiked) {
+      toast.info('You have already liked this resource');
+      return;
+    }
+
+    if (hasDisliked) {
+      toast.error('You cannot like and dislike the same resource');
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -119,6 +136,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
       }
       
       setLikes(newLikes);
+      setHasLiked(true);
     } catch (error) {
       console.error('Error liking resource:', error);
       toast.error('Failed to like resource');
@@ -128,6 +146,21 @@ const ResourceCard: FC<ResourceCardProps> = ({
   };
 
   const handleDislike = async () => {
+    if (!currentUser) {
+      toast.error('You must be logged in to dislike resources');
+      return;
+    }
+
+    if (hasDisliked) {
+      toast.info('You have already disliked this resource');
+      return;
+    }
+
+    if (hasLiked) {
+      toast.error('You cannot like and dislike the same resource');
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -178,6 +211,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
       }
       
       setDislikes(newDislikes);
+      setHasDisliked(true);
     } catch (error) {
       console.error('Error disliking resource:', error);
       toast.error('Failed to dislike resource');
@@ -187,48 +221,67 @@ const ResourceCard: FC<ResourceCardProps> = ({
   };
 
   const handleMarkCompleted = async () => {
-    if (!onComplete || !currentUser) return;
+    if (!onComplete || !currentUser) {
+      toast.error('You must be logged in to complete assignments');
+      return;
+    }
     
     try {
       setLoading(true);
+      
+      // Check if already completed
+      const { data: existingCompletion, error: checkError } = await supabase
+        .from('completions')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('resource_id', resource.id)
+        .maybeSingle();
+        
+      if (checkError) throw checkError;
+      
+      if (existingCompletion) {
+        toast.info('You have already completed this assignment');
+        setIsCompleted(true);
+        return;
+      }
       
       // Check if the resource is overdue
       const isOverdue = resource.deadline ? new Date(resource.deadline) < new Date() : false;
       
       // Apply points modification based on timeliness
-      if (currentUser) {
-        const pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
+      let pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
+      
+      // First get the current user points
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('points')
+        .eq('id', currentUser.id)
+        .single();
+      
+      if (userError) {
+        console.warn('Could not fetch user points:', userError);
+      } else {
+        const currentPoints = userData?.points || 0;
+        const newPoints = currentPoints + pointsChange;
         
-        // First get the current user points
-        const { data: userData, error: userError } = await supabase
+        // Update user points
+        const { error: pointsError } = await supabase
           .from('users')
-          .select('points')
-          .eq('id', currentUser.id)
-          .single();
-        
-        if (userError) {
-          console.warn('Could not fetch user points:', userError);
-        } else {
-          const currentPoints = userData?.points || 0;
-          const newPoints = currentPoints + pointsChange;
+          .update({ points: newPoints })
+          .eq('id', currentUser.id);
           
-          // Update user points
-          const { error: pointsError } = await supabase
-            .from('users')
-            .update({ points: newPoints })
-            .eq('id', currentUser.id);
-            
-          if (pointsError) {
-            console.warn('Could not update points:', pointsError);
-          } else {
-            // Also update local state in currentUser
+        if (pointsError) {
+          console.warn('Could not update points:', pointsError);
+        } else {
+          // Also update local state in currentUser
+          if (currentUser) {
             currentUser.points = newPoints;
-            
-            if (isOverdue) {
-              toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
-            } else {
-              toast.success(`Assignment completed on time! +${pointsChange} points!`);
-            }
+          }
+          
+          if (isOverdue) {
+            toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
+          } else {
+            toast.success(`Assignment completed on time! +${pointsChange} points!`);
           }
         }
       }
@@ -255,13 +308,17 @@ const ResourceCard: FC<ResourceCardProps> = ({
       }
     } catch (error: any) {
       console.error('Error marking resource as completed:', error);
-      toast.error('Failed to mark resource as completed');
+      toast.error('Failed to mark resource as completed. Make sure you are logged in.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCommentClick = () => {
+    if (!currentUser) {
+      toast.error('You must be logged in to view and add comments');
+      return;
+    }
     fetchComments();
     setCommentsOpen(true);
   };
@@ -321,9 +378,9 @@ const ResourceCard: FC<ResourceCardProps> = ({
         
         <Button 
           size="sm" 
-          variant="ghost"
+          variant={hasLiked ? "default" : "ghost"}
           onClick={handleLike}
-          disabled={loading}
+          disabled={loading || hasLiked}
         >
           <ThumbsUp className="h-4 w-4 mr-1" />
           {likes}
@@ -331,9 +388,9 @@ const ResourceCard: FC<ResourceCardProps> = ({
         
         <Button 
           size="sm" 
-          variant="ghost"
+          variant={hasDisliked ? "default" : "ghost"}
           onClick={handleDislike}
-          disabled={loading}
+          disabled={loading || hasDisliked}
         >
           <ThumbsDown className="h-4 w-4 mr-1" />
           {dislikes}
@@ -361,7 +418,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
           </Button>
         )}
         
-        {onDelete && (
+        {onDelete && currentUser && (currentUser.id === resource.user_id || currentUser.is_admin || currentUser.is_super_admin) && (
           <Button 
             size="sm" 
             variant="outline" 

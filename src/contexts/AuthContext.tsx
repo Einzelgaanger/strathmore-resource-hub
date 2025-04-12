@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,7 +17,7 @@ interface AuthContextType {
   updateProfilePicture: (userId: string, file: File) => Promise<string>;
   updateProfile: (userData: Partial<User>) => Promise<boolean>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
-  updateUserProfile: (userData: Partial<User>) => Promise<{ data?: User; error?: any }>;
+  updateUserProfile: (userProfile: Partial<User>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -270,47 +269,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const changePassword = updatePassword;
 
-  const updateUserProfile = async (userData: Partial<User>) => {
-    if (!user || !user.id) {
-      console.error('Cannot update profile: No user logged in');
-      return { error: 'No user logged in' };
-    }
-
+  const updateUserProfile = async (userProfile: Partial<User>) => {
     try {
-      // Create a properly typed update payload with required fields
-      const updatePayload = {
-        // Include all required fields from the current user
-        id: user.id,
-        admission_number: user.admission_number,
-        email: userData.email || user.email,
-        name: user.name,
-        // Then add optional updated fields
-        ...userData
+      // Make sure id is included
+      if (!userProfile.id) {
+        throw new Error('User ID is required for profile updates');
+      }
+      
+      // Ensure required fields are present when updating
+      const updateData = {
+        id: userProfile.id,
+        // Include required fields with fallback to empty string
+        admission_number: userProfile.admission_number || '',
+        email: userProfile.email || '',
+        name: userProfile.name || '',
+        // Optional fields
+        profile_picture_url: userProfile.profile_picture_url,
+        class_instance_id: userProfile.class_instance_id,
+        is_admin: userProfile.is_admin,
+        is_super_admin: userProfile.is_super_admin,
+        points: userProfile.points,
+        rank: userProfile.rank,
+        reset_code: userProfile.reset_code,
+        last_login: userProfile.last_login,
+        created_at: userProfile.created_at
       };
       
-      // Execute the update
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('users')
-        .update(updatePayload)
-        .eq('id', user.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error updating user profile:', error);
-        return { error };
+        .update(updateData)
+        .eq('id', userProfile.id);
+      
+      if (error) throw error;
+      
+      // Update local user state
+      if (user) {
+        setUser({
+          ...user,
+          ...userProfile
+        });
       }
-
-      // Update the user context with new data
-      setUser({
-        ...user,
-        ...data
-      });
-
-      return { data };
-    } catch (error) {
-      console.error('Error in updateUserProfile:', error);
-      return { error };
+      
+      return true;
+    } catch (error: any) {
+      console.error('Error updating user profile:', error);
+      toast.error(`Failed to update profile: ${error.message}`);
+      return false;
     }
   };
 

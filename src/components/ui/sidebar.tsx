@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
@@ -16,7 +15,7 @@ import {
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { useMedia } from '@/hooks/use-mobile';
+import { useMobileNav } from '@/hooks/use-mobile';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
@@ -32,7 +31,7 @@ interface Unit {
 
 export function Sidebar() {
   const location = useLocation();
-  const isMobile = useMedia('(max-width: 768px)');
+  const isMobile = useMobileNav();
   const [collapsed, setCollapsed] = useState(isMobile);
   const [unitsExpanded, setUnitsExpanded] = useState(true);
   const [units, setUnits] = useState<Unit[]>([]);

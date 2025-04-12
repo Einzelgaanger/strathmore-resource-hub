@@ -62,7 +62,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
         throw error;
       }
       
-      // Award points for commenting
+      // Award points for commenting - direct update
       try {
         // Fetch current user points
         const { data: userData, error: userError } = await supabase
@@ -105,7 +105,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
         resource_id: data.resource_id,
         user_id: data.user_id,
         created_at: data.created_at,
-        user: data.user ? {
+        user: {
           id: data.user.id,
           name: data.user.name,
           admission_number: data.user.admission_number,
@@ -117,7 +117,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
           rank: 0,
           created_at: '',
           profile_picture_url: data.user.profile_picture_url
-        } : undefined
+        }
       };
       
       onCommentAdded(commentData);
@@ -125,7 +125,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       toast.success('Comment added successfully');
     } catch (error) {
       console.error('Failed to submit comment:', error);
-      toast.error('Failed to submit comment');
+      toast.error('Failed to submit comment. Make sure you are logged in.');
     } finally {
       setSubmitting(false);
     }

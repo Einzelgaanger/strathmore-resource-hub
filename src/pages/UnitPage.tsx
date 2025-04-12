@@ -368,7 +368,25 @@ export default function UnitPage() {
   };
 
   const handleDeleteResource = async (resourceId: number) => {
+    if (!user) {
+      toast.error('You must be logged in to delete resources');
+      return;
+    }
+    
     try {
+      const { data: resourceData, error: resourceError } = await supabase
+        .from('resources')
+        .select('user_id')
+        .eq('id', resourceId)
+        .single();
+        
+      if (resourceError) throw resourceError;
+      
+      if (resourceData.user_id !== user.id && !user.is_admin && !user.is_super_admin) {
+        toast.error('You can only delete resources you created');
+        return;
+      }
+      
       const { error } = await supabase
         .from('resources')
         .delete()
