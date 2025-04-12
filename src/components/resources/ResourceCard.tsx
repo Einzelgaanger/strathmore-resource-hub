@@ -6,9 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { Resource, User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import { Download, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Download, ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CommentList } from './CommentList';
 
 interface ResourceCardProps {
   resource: Resource;
@@ -16,7 +18,6 @@ interface ResourceCardProps {
   completed?: boolean;
   onComplete?: () => void;
   onDelete?: () => void;
-  onEdit?: () => void;
 }
 
 const ResourceCard: FC<ResourceCardProps> = ({
@@ -25,13 +26,37 @@ const ResourceCard: FC<ResourceCardProps> = ({
   completed = false,
   onComplete,
   onDelete,
-  onEdit,
 }) => {
   const { user: currentUser } = useAuth();
   const [likes, setLikes] = useState(resource.likes || 0);
   const [dislikes, setDislikes] = useState(resource.dislikes || 0);
   const [loading, setLoading] = useState(false);
   const [isCompleted, setIsCompleted] = useState(completed);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState<any[]>([]);
+
+  const fetchComments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          user:user_id (
+            id,
+            name,
+            admission_number,
+            profile_picture_url
+          )
+        `)
+        .eq('resource_id', resource.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setComments(data || []);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    }
+  };
 
   const handleDownload = () => {
     if (!resource.file_url) {
@@ -47,34 +72,53 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       setLoading(true);
       
+      // First get the current resource values to ensure we're updating with the latest
+      const { data: currentResource, error: fetchError } = await supabase
+        .from('resources')
+        .select('likes')
+        .eq('id', resource.id)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      const newLikes = (currentResource?.likes || 0) + 1;
+      
       // Update the resource likes count
       const { error } = await supabase
         .from('resources')
-        .update({ likes: likes + 1 })
+        .update({ likes: newLikes })
         .eq('id', resource.id);
       
       if (error) throw error;
       
       // Add points to the creator (5 points per like)
       if (resource.user_id) {
-        const { error: pointsError } = await supabase
+        const { data: userData, error: userError } = await supabase
           .from('users')
-          .update({ 
-            points: supabase.rpc('increment_points', { 
-              user_id: resource.user_id, 
-              amount: 5 
-            }) 
-          })
-          .eq('id', resource.user_id);
+          .select('points')
+          .eq('id', resource.user_id)
+          .single();
           
-        if (pointsError) {
-          console.warn('Could not update creator points (non-critical):', pointsError);
+        if (userError) {
+          console.warn('Could not fetch user points:', userError);
         } else {
-          toast.success('Resource liked! Creator awarded 5 points.');
+          const currentPoints = userData?.points || 0;
+          const newPoints = currentPoints + 5;
+          
+          const { error: pointsError } = await supabase
+            .from('users')
+            .update({ points: newPoints })
+            .eq('id', resource.user_id);
+            
+          if (pointsError) {
+            console.warn('Could not update creator points:', pointsError);
+          } else {
+            toast.success('Resource liked! Creator awarded 5 points.');
+          }
         }
       }
       
-      setLikes(prev => prev + 1);
+      setLikes(newLikes);
     } catch (error) {
       console.error('Error liking resource:', error);
       toast.error('Failed to like resource');
@@ -87,34 +131,53 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       setLoading(true);
       
+      // First get the current resource values to ensure we're updating with the latest
+      const { data: currentResource, error: fetchError } = await supabase
+        .from('resources')
+        .select('dislikes')
+        .eq('id', resource.id)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      const newDislikes = (currentResource?.dislikes || 0) + 1;
+      
       // Update the resource dislikes count
       const { error } = await supabase
         .from('resources')
-        .update({ dislikes: dislikes + 1 })
+        .update({ dislikes: newDislikes })
         .eq('id', resource.id);
       
       if (error) throw error;
       
       // Subtract points from the creator (2 points per dislike)
       if (resource.user_id) {
-        const { error: pointsError } = await supabase
+        const { data: userData, error: userError } = await supabase
           .from('users')
-          .update({ 
-            points: supabase.rpc('increment_points', { 
-              user_id: resource.user_id, 
-              amount: -2 
-            }) 
-          })
-          .eq('id', resource.user_id);
+          .select('points')
+          .eq('id', resource.user_id)
+          .single();
           
-        if (pointsError) {
-          console.warn('Could not update creator points (non-critical):', pointsError);
+        if (userError) {
+          console.warn('Could not fetch user points:', userError);
         } else {
-          toast.info('Resource disliked. Creator lost 2 points.');
+          const currentPoints = userData?.points || 0;
+          const newPoints = Math.max(0, currentPoints - 2); // Ensure points don't go below 0
+          
+          const { error: pointsError } = await supabase
+            .from('users')
+            .update({ points: newPoints })
+            .eq('id', resource.user_id);
+            
+          if (pointsError) {
+            console.warn('Could not update creator points:', pointsError);
+          } else {
+            toast.info('Resource disliked. Creator lost 2 points.');
+          }
         }
       }
       
-      setDislikes(prev => prev + 1);
+      setDislikes(newDislikes);
     } catch (error) {
       console.error('Error disliking resource:', error);
       toast.error('Failed to dislike resource');
@@ -124,7 +187,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
   };
 
   const handleMarkCompleted = async () => {
-    if (!onComplete) return;
+    if (!onComplete || !currentUser) return;
     
     try {
       setLoading(true);
@@ -136,33 +199,75 @@ const ResourceCard: FC<ResourceCardProps> = ({
       if (currentUser) {
         const pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
         
-        const { error: pointsError } = await supabase
+        // First get the current user points
+        const { data: userData, error: userError } = await supabase
           .from('users')
-          .update({ 
-            points: (currentUser.points || 0) + pointsChange 
-          })
-          .eq('id', currentUser.id);
-          
-        if (pointsError) {
-          console.warn('Could not update points (non-critical):', pointsError);
+          .select('points')
+          .eq('id', currentUser.id)
+          .single();
+        
+        if (userError) {
+          console.warn('Could not fetch user points:', userError);
         } else {
-          if (isOverdue) {
-            toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
+          const currentPoints = userData?.points || 0;
+          const newPoints = currentPoints + pointsChange;
+          
+          // Update user points
+          const { error: pointsError } = await supabase
+            .from('users')
+            .update({ points: newPoints })
+            .eq('id', currentUser.id);
+            
+          if (pointsError) {
+            console.warn('Could not update points:', pointsError);
           } else {
-            toast.success(`Assignment completed on time! +${pointsChange} points!`);
+            // Also update local state in currentUser
+            currentUser.points = newPoints;
+            
+            if (isOverdue) {
+              toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
+            } else {
+              toast.success(`Assignment completed on time! +${pointsChange} points!`);
+            }
           }
         }
       }
       
-      // Call the onComplete handler
-      onComplete();
-      setIsCompleted(true);
-    } catch (error) {
+      // Create a completion record
+      const { error: completionError } = await supabase
+        .from('completions')
+        .insert({
+          user_id: currentUser.id,
+          resource_id: resource.id,
+          completed_at: new Date().toISOString()
+        });
+      
+      if (completionError) {
+        if (completionError.code === '23505') { // Duplicate key violation
+          toast.warning('You have already completed this assignment');
+        } else {
+          throw completionError;
+        }
+      } else {
+        // Call the onComplete handler
+        onComplete();
+        setIsCompleted(true);
+      }
+    } catch (error: any) {
       console.error('Error marking resource as completed:', error);
       toast.error('Failed to mark resource as completed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCommentClick = () => {
+    fetchComments();
+    setCommentsOpen(true);
+  };
+
+  const handleAddComment = (newComment: any) => {
+    setComments([newComment, ...comments]);
   };
 
   const isOverdue = resource.deadline ? new Date(resource.deadline) < new Date() : false;
@@ -234,6 +339,16 @@ const ResourceCard: FC<ResourceCardProps> = ({
           {dislikes}
         </Button>
         
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleCommentClick}
+          disabled={loading}
+        >
+          <MessageSquare className="h-4 w-4 mr-1" />
+          Comment
+        </Button>
+        
         {resource.type === 'assignment' && !isCompleted && onComplete && (
           <Button 
             size="sm" 
@@ -257,18 +372,20 @@ const ResourceCard: FC<ResourceCardProps> = ({
             Delete
           </Button>
         )}
-        
-        {onEdit && (
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={onEdit}
-            disabled={loading}
-          >
-            Edit
-          </Button>
-        )}
       </CardFooter>
+
+      <Dialog open={commentsOpen} onOpenChange={setCommentsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Comments on "{resource.title}"</DialogTitle>
+          </DialogHeader>
+          <CommentList 
+            comments={comments} 
+            resourceId={resource.id}
+            onCommentAdded={handleAddComment}
+          />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };

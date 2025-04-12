@@ -277,12 +277,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      // Create a properly typed update payload
+      // Create a properly typed update payload with required fields
       const updatePayload = {
-        admission_number: user.admission_number, // Always include required fields
+        // Include all required fields from the current user
+        id: user.id,
+        admission_number: user.admission_number,
         email: userData.email || user.email,
-        name: user.name, // Name cannot be changed
-        ...userData,
+        name: user.name,
+        // Then add optional updated fields
+        ...userData
       };
       
       // Execute the update

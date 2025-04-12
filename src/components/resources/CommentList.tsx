@@ -64,16 +64,33 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       
       // Award points for commenting
       try {
-        // Use a direct database update instead of the RPC function
-        const { error: pointsError } = await supabase
+        // Fetch current user points
+        const { data: userData, error: userError } = await supabase
           .from('users')
-          .update({ points: (user.points || 0) + 1 })
-          .eq('id', user.id);
+          .select('points')
+          .eq('id', user.id)
+          .single();
           
-        if (!pointsError) {
-          toast.success('+1 point for commenting!');
+        if (userError) {
+          console.warn('Could not fetch user points:', userError);
         } else {
-          console.warn('Could not update points for comment (non-critical):', pointsError);
+          const currentPoints = userData?.points || 0;
+          const newPoints = currentPoints + 1;
+          
+          const { error: pointsError } = await supabase
+            .from('users')
+            .update({ points: newPoints })
+            .eq('id', user.id);
+            
+          if (pointsError) {
+            console.warn('Could not update points for comment (non-critical):', pointsError);
+          } else {
+            // Update local user state
+            if (user) {
+              user.points = newPoints;
+            }
+            toast.success('+1 point for commenting!');
+          }
         }
       } catch (pointsError) {
         console.warn('Could not update points for comment (non-critical):', pointsError);
@@ -141,7 +158,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
               <Avatar className="h-8 w-8">
                 <AvatarImage src={comment.user?.profile_picture_url || undefined} />
                 <AvatarFallback>
-                  {comment.user?.name.slice(0, 2).toUpperCase() || 'U'}
+                  {comment.user?.name?.slice(0, 2).toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 space-y-1">
