@@ -1,15 +1,19 @@
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { loginByAdmissionNumber } from '@/lib/supabase';
 import { User } from '@/lib/types';
+import { toast } from 'sonner';
 
 interface AuthContextProps {
   user: User | null;
   loading: boolean;
-  login: (admissionNumber: string, password: string) => Promise<{ success: boolean; user?: User; error?: string }>;
+  login: (admissionNumber: string, password: string) => Promise<{ success: boolean; user: User | null; error?: string }>;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<{ success: boolean; user?: any; error?: string }>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  updateProfilePicture: (userId: string, file: File) => Promise<{ success: boolean; url?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -101,10 +105,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return { success: true, user: userData };
       }
       
-      return { success: false, error: "Invalid credentials" };
+      return { success: false, user: null, error: "Invalid credentials" };
     } catch (error: any) {
       console.error("Login error:", error);
-      return { success: false, error: error.message || "Authentication failed" };
+      return { success: false, user: null, error: error.message || "Authentication failed" };
     } finally {
       setLoading(false);
     }
@@ -121,7 +125,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  // Fixed type issue in updateUser function
+  // Fixed update user function to ensure required fields
   const updateUser = async (userData: Partial<User>) => {
     if (!user) {
       throw new Error('No user is currently authenticated');
@@ -132,9 +136,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const updatedData = {
         ...userData,
         id: user.id,
-        admission_number: userData.admission_number || user.admission_number, // Make admission_number required
-        email: userData.email || user.email, // Make email required
-        name: userData.name || user.name, // Make name required
+        admission_number: userData.admission_number || user.admission_number,
+        email: userData.email || user.email,
+        name: userData.name || user.name,
       };
       
       const { data, error } = await supabase
@@ -158,12 +162,107 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  // Add updatePassword function
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+
+      // First, verify the current password by attempting to log in
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (authError || !authData.user) {
+        return { success: false, error: "Current password is incorrect" };
+      }
+
+      // Update the password
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      // Also update the password in the users table if it's stored there
+      try {
+        await supabase
+          .from('users')
+          .update({ password: newPassword })
+          .eq('id', user.id);
+      } catch (err) {
+        console.warn("Could not update password in users table:", err);
+        // This is not critical, we'll continue
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("Password update error:", error);
+      return { success: false, error: error.message || "Failed to update password" };
+    }
+  };
+
+  // Add updateProfilePicture function
+  const updateProfilePicture = async (userId: string, file: File) => {
+    try {
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+
+      // Upload the file to storage
+      const filename = `profile-pictures/${userId}/${Date.now()}-${file.name}`;
+      const { error: uploadError, data } = await supabase.storage
+        .from('avatars')
+        .upload(filename, file, {
+          upsert: true,
+        });
+
+      if (uploadError) {
+        return { success: false, error: uploadError.message };
+      }
+
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filename);
+
+      // Update user profile
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ profile_picture_url: publicUrl })
+        .eq('id', userId);
+
+      if (updateError) {
+        return { success: false, error: updateError.message };
+      }
+
+      // Update local user state
+      setUser(prevUser => {
+        if (prevUser) {
+          return { ...prevUser, profile_picture_url: publicUrl };
+        }
+        return prevUser;
+      });
+
+      return { success: true, url: publicUrl };
+    } catch (error: any) {
+      console.error("Profile picture update error:", error);
+      return { success: false, error: error.message || "Failed to update profile picture" };
+    }
+  };
+
   const value: AuthContextProps = {
     user,
     loading,
     login,
     logout,
     updateUser,
+    updatePassword,
+    updateProfilePicture,
   };
 
   return (

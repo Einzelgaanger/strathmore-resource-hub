@@ -67,7 +67,12 @@ export default {
 					blue: '#003E7E',
 					gold: '#FFD700',
 					light: '#F5F7FA',
-					dark: '#1E293B'
+					dark: '#1E293B',
+					purple: '#8B5CF6',
+					teal: '#14B8A6',
+					red: '#EF4444',
+					green: '#10B981',
+					yellow: '#F59E0B',
 				},
 				rank: {
 					freshman: '#B3E5FC',

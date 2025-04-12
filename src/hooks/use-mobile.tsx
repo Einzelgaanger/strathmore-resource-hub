@@ -19,7 +19,7 @@ export function useIsMobile() {
   return !!isMobile
 }
 
-// Add the correct export for useMobileNav
+// For sidebar usage
 export function useMobileNav() {
   return useIsMobile();
 }
