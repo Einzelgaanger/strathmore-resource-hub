@@ -387,12 +387,30 @@ export default function UnitPage() {
         return;
       }
       
-      const { error } = await supabase
+      const { error: completionsError } = await supabase
+        .from('completions')
+        .delete()
+        .eq('resource_id', resourceId);
+        
+      if (completionsError) {
+        console.error('Error deleting completions:', completionsError);
+      }
+      
+      const { error: commentsError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('resource_id', resourceId);
+        
+      if (commentsError) {
+        console.error('Error deleting comments:', commentsError);
+      }
+      
+      const { error: deleteError } = await supabase
         .from('resources')
         .delete()
         .eq('id', resourceId);
       
-      if (error) throw error;
+      if (deleteError) throw deleteError;
       
       setResources({
         assignments: resources.assignments.filter(r => r.id !== resourceId),

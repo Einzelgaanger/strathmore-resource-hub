@@ -61,6 +61,7 @@ export function ResourceGrid({
           
         if (completionsError) {
           console.error('Error deleting completions:', completionsError);
+          throw completionsError;
         }
         
         // Delete any related comments
@@ -71,11 +72,24 @@ export function ResourceGrid({
           
         if (commentsError) {
           console.error('Error deleting comments:', commentsError);
+          throw commentsError;
         }
           
         // Now delete the resource itself
+        const { error: resourceError } = await supabase
+          .from('resources')
+          .delete()
+          .eq('id', resourceId);
+          
+        if (resourceError) {
+          console.error('Error deleting resource:', resourceError);
+          throw resourceError;
+        }
+        
+        // Only update the UI state if the database operations succeeded
         onDeleteResource(resourceId);
         
+        toast.success('Resource deleted successfully!');
       } catch (error) {
         console.error('Error in delete process:', error);
         toast.error('Error deleting resource. Please try again.');
