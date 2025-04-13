@@ -11,10 +11,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
 
-// Create the Supabase client
+// Create the Supabase client with explicit settings to fix the auth issue
 export const supabase = createClient<Database>(
   supabaseUrl,
-  supabaseAnonKey
+  supabaseAnonKey,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      storageKey: 'strathmore-resources-auth-token',
+    }
+  }
 );
 
 // Helper function to get the current user
@@ -300,16 +307,19 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
       console.warn('Could not update last login time:', updateError);
     }
     
-    // Attempt to sign in with Supabase Auth - but don't let it block if it fails
+    // We'll try Supabase auth login but we won't block if it fails
+    // Our app uses the custom auth system primarily
     try {
-      // Note: This is using the standard auth system but with our custom password
-      // This might help with RLS policies that depend on auth.uid()
-      const { data: authData } = await supabase.auth.signInWithPassword({
+      // This is mostly to get RLS policies to work since they often rely on auth.uid()
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email: userData.email,
         password: 'stratizens#web'
       });
       
-      if (authData.user) {
+      if (authError) {
+        // We can safely ignore this error as we're not relying on Supabase Auth
+        console.warn('Supabase Auth login failed (non-critical):', authError);
+      } else {
         console.log('Supabase Auth login successful');
       }
     } catch (authError) {
@@ -326,65 +336,79 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
 
 // Helper to get comments for a resource
 export const getCommentsForResource = async (resourceId: number) => {
-  const { data, error } = await supabase
-    .from('comments')
-    .select(`
-      *,
-      user:user_id (
-        id,
-        name,
-        admission_number,
-        profile_picture_url
-      )
-    `)
-    .eq('resource_id', resourceId)
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching comments:', error);
-    throw error;
+  try {
+    const { data, error } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        user:user_id (
+          id,
+          name,
+          admission_number,
+          profile_picture_url
+        )
+      `)
+      .eq('resource_id', resourceId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching comments:', error);
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error in getCommentsForResource:', error);
+    return [];
   }
-  
-  return data || [];
 };
 
 // Add a comment to a resource
 export const addCommentToResource = async (resourceId: number, userId: string, content: string) => {
-  const { data, error } = await supabase
-    .from('comments')
-    .insert({
-      resource_id: resourceId,
-      user_id: userId,
-      content: content,
-      created_at: new Date().toISOString()
-    })
-    .select(`
-      *,
-      user:user_id (
-        id,
-        name,
-        admission_number,
-        profile_picture_url
-      )
-    `)
-    .single();
-  
-  if (error) {
-    console.error('Error adding comment:', error);
+  try {
+    console.log('Submitting comment to resource:', resourceId);
+    console.log('Current user ID:', userId);
+    console.log('Comment data to be inserted:', { content, resource_id: resourceId, user_id: userId });
+    
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        resource_id: resourceId,
+        user_id: userId,
+        content: content,
+        created_at: new Date().toISOString()
+      })
+      .select(`
+        *,
+        user:user_id (
+          id,
+          name,
+          admission_number,
+          profile_picture_url
+        )
+      `)
+      .single();
+    
+    if (error) {
+      console.log('API error response:', error);
+      throw new Error(`API error: ${JSON.stringify(error)}`);
+    }
+    
+    // Award points for commenting
+    try {
+      await supabase
+        .from('users')
+        .update({ 
+          points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
+        })
+        .eq('id', userId);
+    } catch (pointsError) {
+      console.warn('Could not update points for comment (non-critical):', pointsError);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Failed to submit comment:', error);
     throw error;
   }
-  
-  // Award points for commenting
-  try {
-    await supabase
-      .from('users')
-      .update({ 
-        points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
-      })
-      .eq('id', userId);
-  } catch (pointsError) {
-    console.warn('Could not update points for comment (non-critical):', pointsError);
-  }
-  
-  return data;
 };

@@ -7,9 +7,9 @@ import { Resource, User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { Download, ThumbsUp, ThumbsDown, MessageSquare, Check, AlertTriangle } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase'; // Use the common supabase import
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { CommentList } from './CommentList';
 
 interface ResourceCardProps {
@@ -69,6 +69,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
     }
     
     try {
+      console.log('Fetching comments for resource ID:', resource.id);
+      
       const { data, error } = await supabase
         .from('comments')
         .select(`
@@ -84,6 +86,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
         .order('created_at', { ascending: false });
       
       if (error) throw error;
+      
+      console.log('Fetched comments:', data);
       setComments(data || []);
     } catch (error) {
       console.error('Error fetching comments:', error);
@@ -499,6 +503,9 @@ const ResourceCard: FC<ResourceCardProps> = ({
             <DialogTitle>
               Comments on "{resource.title}"
             </DialogTitle>
+            <DialogDescription>
+              Discuss this resource with your classmates
+            </DialogDescription>
           </DialogHeader>
           <CommentList 
             comments={comments} 
