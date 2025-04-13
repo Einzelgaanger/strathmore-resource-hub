@@ -11,7 +11,6 @@ interface ResourceGridProps {
   completedResourceIds?: number[];
   onCompleteResource?: (resourceId: number) => void;
   onDeleteResource?: (resourceId: number) => void;
-  onEditResource?: (resource: Resource) => void;
   emptyMessage?: string;
 }
 
@@ -21,7 +20,6 @@ export function ResourceGrid({
   completedResourceIds = [],
   onCompleteResource,
   onDeleteResource,
-  onEditResource,
   emptyMessage = "No resources found."
 }: ResourceGridProps) {
   if (!resources.length) {
@@ -124,10 +122,11 @@ export function ResourceGrid({
             completed={completedResourceIds.includes(resource.id)}
             onComplete={() => handleComplete(resource.id)}
             onDelete={() => handleDelete(resource.id)}
-            onEdit={onEditResource ? () => onEditResource(resource) : undefined}
           />
         </div>
       ))}
     </div>
   );
 }
+
+export default ResourceGrid;
