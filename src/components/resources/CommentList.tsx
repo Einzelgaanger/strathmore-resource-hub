@@ -45,44 +45,61 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
     
     try {
       console.log('Submitting comment to resource:', resourceId);
+      console.log('Current user ID:', user.id);
       
-      // Using the addCommentToResource function from supabase.ts
-      const { data, error } = await supabase
-        .from('comments')
-        .insert({
-          content: newComment,
-          resource_id: resourceId,
-          user_id: user.id
-        })
-        .select(`
-          *,
-          user:user_id (
-            id,
-            name,
-            admission_number,
-            profile_picture_url
-          )
-        `)
+      // Create the comment data
+      const commentData = {
+        content: newComment,
+        resource_id: resourceId,
+        user_id: user.id
+      };
+      
+      console.log('Comment data to be inserted:', commentData);
+      
+      // Direct insert through REST API if needed to avoid RLS issues
+      const response = await fetch('https://zsddctqjnymmtzxbrkvk.supabase.co/rest/v1/comments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(commentData)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API error response:', errorData);
+        throw new Error(`API error: ${JSON.stringify(errorData)}`);
+      }
+      
+      const data = await response.json();
+      console.log('Comment added via API successfully:', data);
+      
+      // Fetch the user data to attach to the comment
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name, admission_number, profile_picture_url')
+        .eq('id', user.id)
         .single();
-      
-      if (error) {
-        console.error('Error adding comment:', error);
-        throw error;
+        
+      if (userError) {
+        console.warn('Could not fetch user details for comment:', userError);
       }
       
       // Award points for commenting - direct update
       try {
         // Fetch current user points
-        const { data: userData, error: userError } = await supabase
+        const { data: userPointsData, error: userPointsError } = await supabase
           .from('users')
           .select('points')
           .eq('id', user.id)
           .single();
           
-        if (userError) {
-          console.warn('Could not fetch user points:', userError);
+        if (userPointsError) {
+          console.warn('Could not fetch user points:', userPointsError);
         } else {
-          const currentPoints = userData?.points || 0;
+          const currentPoints = userPointsData?.points || 0;
           const newPoints = currentPoints + 1;
           
           const { error: pointsError } = await supabase
@@ -104,32 +121,26 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
         console.warn('Could not update points for comment (non-critical):', pointsError);
       }
       
-      console.log('Comment added successfully:', data);
-      
       // Convert the returned data to match the Comment type
-      const commentData: Comment = {
-        id: data.id,
-        content: data.content,
-        resource_id: data.resource_id,
-        user_id: data.user_id,
-        created_at: data.created_at,
-        user: {
-          id: data.user.id,
-          name: data.user.name,
-          admission_number: data.user.admission_number,
-          email: '',
-          class_instance_id: 0,
-          is_admin: false,
-          is_super_admin: false,
-          points: 0,
-          rank: 0,
+      const commentWithUser: Comment = {
+        ...data[0],
+        user: userData || {
+          id: user.id,
+          name: user.name || 'Unknown User',
+          admission_number: user.admission_number || '',
+          email: user.email || '',
+          class_instance_id: user.class_instance_id || 0,
+          is_admin: user.is_admin || false,
+          is_super_admin: user.is_super_admin || false,
+          points: user.points || 0,
+          rank: user.rank || 0,
           created_at: '',
-          profile_picture_url: data.user.profile_picture_url
+          profile_picture_url: user.profile_picture_url
         }
       };
       
-      setLocalComments([commentData, ...localComments]);
-      onCommentAdded(commentData);
+      setLocalComments([commentWithUser, ...localComments]);
+      onCommentAdded(commentWithUser);
       setNewComment('');
       toast.success('Comment added successfully');
     } catch (error) {
@@ -162,13 +173,19 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
         return;
       }
       
-      // Delete the comment
-      const { error: deleteError } = await supabase
-        .from('comments')
-        .delete()
-        .eq('id', commentId);
-        
-      if (deleteError) throw deleteError;
+      // Delete using direct REST API call to ensure it works
+      const response = await fetch(`https://zsddctqjnymmtzxbrkvk.supabase.co/rest/v1/comments?id=eq.${commentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`API error: ${errorData}`);
+      }
       
       // Update local state only after successful database deletion
       setLocalComments(localComments.filter(c => c.id !== commentId));

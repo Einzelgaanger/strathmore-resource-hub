@@ -55,9 +55,12 @@ export default function UnitPage() {
     if (!unitId) return;
     
     try {
+      console.log('Refreshing resources for unit:', unitId);
       const assignments = await getResourcesForUnit(parseInt(unitId), 'assignment');
       const notes = await getResourcesForUnit(parseInt(unitId), 'note');
       const pastPapers = await getResourcesForUnit(parseInt(unitId), 'past_paper');
+      
+      console.log('Fetched resources:', { assignments, notes, pastPapers });
       
       setResources({
         assignments,
@@ -374,13 +377,18 @@ export default function UnitPage() {
     }
     
     try {
+      console.log('Starting deletion process for resource ID:', resourceId);
+      
       const { data: resourceData, error: resourceError } = await supabase
         .from('resources')
-        .select('user_id')
+        .select('user_id, type')
         .eq('id', resourceId)
         .single();
         
-      if (resourceError) throw resourceError;
+      if (resourceError) {
+        console.error('Error fetching resource details:', resourceError);
+        throw resourceError;
+      }
       
       if (resourceData.user_id !== user.id && !user.is_admin && !user.is_super_admin) {
         toast.error('You can only delete resources you created');
@@ -410,12 +418,26 @@ export default function UnitPage() {
         .delete()
         .eq('id', resourceId);
       
-      if (deleteError) throw deleteError;
+      if (deleteError) {
+        console.error('Error deleting resource:', deleteError);
+        throw deleteError;
+      }
       
-      setResources({
-        assignments: resources.assignments.filter(r => r.id !== resourceId),
-        notes: resources.notes.filter(r => r.id !== resourceId),
-        past_papers: resources.past_papers.filter(r => r.id !== resourceId)
+      console.log('Resource and related data successfully deleted');
+      
+      const resourceType = resourceData.type as 'assignment' | 'note' | 'past_paper';
+      setResources(prevResources => {
+        const newResources = { ...prevResources };
+        
+        if (resourceType === 'assignment') {
+          newResources.assignments = newResources.assignments.filter(r => r.id !== resourceId);
+        } else if (resourceType === 'note') {
+          newResources.notes = newResources.notes.filter(r => r.id !== resourceId);
+        } else if (resourceType === 'past_paper') {
+          newResources.past_papers = newResources.past_papers.filter(r => r.id !== resourceId);
+        }
+        
+        return newResources;
       });
       
       toast.success('Resource deleted successfully!');

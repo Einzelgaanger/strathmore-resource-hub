@@ -49,11 +49,13 @@ export function ResourceGrid({
     }
   };
   
-  // Enhanced delete functionality to ensure resource is actually deleted
+  // Enhanced delete functionality with thorough error handling
   const handleDelete = async (resourceId: number) => {
     if (onDeleteResource) {
       try {
-        // First delete any related completions
+        console.log('Starting delete process for resource ID:', resourceId);
+        
+        // 1. First delete any related completions
         const { error: completionsError } = await supabase
           .from('completions')
           .delete()
@@ -61,10 +63,10 @@ export function ResourceGrid({
           
         if (completionsError) {
           console.error('Error deleting completions:', completionsError);
-          throw completionsError;
+          throw new Error(`Failed to delete completions: ${completionsError.message}`);
         }
         
-        // Delete any related comments
+        // 2. Delete any related comments
         const { error: commentsError } = await supabase
           .from('comments')
           .delete()
@@ -72,10 +74,10 @@ export function ResourceGrid({
           
         if (commentsError) {
           console.error('Error deleting comments:', commentsError);
-          throw commentsError;
+          throw new Error(`Failed to delete comments: ${commentsError.message}`);
         }
-          
-        // Now delete the resource itself
+        
+        // 3. Now delete the resource itself
         const { error: resourceError } = await supabase
           .from('resources')
           .delete()
@@ -83,16 +85,18 @@ export function ResourceGrid({
           
         if (resourceError) {
           console.error('Error deleting resource:', resourceError);
-          throw resourceError;
+          throw new Error(`Failed to delete resource: ${resourceError.message}`);
         }
+        
+        console.log('Resource and all related data successfully deleted from database');
         
         // Only update the UI state if the database operations succeeded
         onDeleteResource(resourceId);
         
         toast.success('Resource deleted successfully!');
       } catch (error) {
-        console.error('Error in delete process:', error);
-        toast.error('Error deleting resource. Please try again.');
+        console.error('Complete error in delete process:', error);
+        toast.error(`Error deleting resource: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       toast.success('Resource deleted successfully!');
@@ -120,6 +124,7 @@ export function ResourceGrid({
             completed={completedResourceIds.includes(resource.id)}
             onComplete={() => handleComplete(resource.id)}
             onDelete={() => handleDelete(resource.id)}
+            onEdit={onEditResource ? () => onEditResource(resource) : undefined}
           />
         </div>
       ))}
