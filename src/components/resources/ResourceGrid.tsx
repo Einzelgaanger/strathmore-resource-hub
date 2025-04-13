@@ -3,7 +3,7 @@ import React from 'react';
 import { Resource, User } from '@/lib/types';
 import ResourceCard from './ResourceCard';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 
 interface ResourceGridProps {
   resources: Resource[];
@@ -11,6 +11,7 @@ interface ResourceGridProps {
   completedResourceIds?: number[];
   onCompleteResource?: (resourceId: number) => void;
   onDeleteResource?: (resourceId: number) => void;
+  onEditResource?: (resource: Resource) => void;
   emptyMessage?: string;
 }
 
@@ -20,6 +21,7 @@ export function ResourceGrid({
   completedResourceIds = [],
   onCompleteResource,
   onDeleteResource,
+  onEditResource,
   emptyMessage = "No resources found."
 }: ResourceGridProps) {
   if (!resources.length) {
@@ -47,43 +49,65 @@ export function ResourceGrid({
     }
   };
   
-  // Enhanced delete functionality with thorough error handling
+  // Enhanced delete functionality with direct API access for consistent behavior
   const handleDelete = async (resourceId: number) => {
     if (onDeleteResource) {
       try {
         console.log('Starting delete process for resource ID:', resourceId);
         
+        // Using the same direct API approach as successful uploads
+        const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+        
         // 1. First delete any related completions
-        const { error: completionsError } = await supabase
-          .from('completions')
-          .delete()
-          .eq('resource_id', resourceId);
-          
-        if (completionsError) {
-          console.error('Error deleting completions:', completionsError);
-          throw new Error(`Failed to delete completions: ${completionsError.message}`);
+        const completionsResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/completions?resource_id=eq.${resourceId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          }
+        );
+        
+        if (!completionsResponse.ok && completionsResponse.status !== 404) {
+          throw new Error(`Failed to delete completions: ${completionsResponse.statusText}`);
         }
         
         // 2. Delete any related comments
-        const { error: commentsError } = await supabase
-          .from('comments')
-          .delete()
-          .eq('resource_id', resourceId);
-          
-        if (commentsError) {
-          console.error('Error deleting comments:', commentsError);
-          throw new Error(`Failed to delete comments: ${commentsError.message}`);
+        const commentsResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/comments?resource_id=eq.${resourceId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          }
+        );
+        
+        if (!commentsResponse.ok && commentsResponse.status !== 404) {
+          throw new Error(`Failed to delete comments: ${commentsResponse.statusText}`);
         }
         
         // 3. Now delete the resource itself
-        const { error: resourceError } = await supabase
-          .from('resources')
-          .delete()
-          .eq('id', resourceId);
-          
-        if (resourceError) {
-          console.error('Error deleting resource:', resourceError);
-          throw new Error(`Failed to delete resource: ${resourceError.message}`);
+        const resourceResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/resources?id=eq.${resourceId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          }
+        );
+        
+        if (!resourceResponse.ok) {
+          throw new Error(`Failed to delete resource: ${resourceResponse.statusText}`);
         }
         
         console.log('Resource and all related data successfully deleted from database');
@@ -98,6 +122,12 @@ export function ResourceGrid({
       }
     } else {
       toast.success('Resource deleted successfully!');
+    }
+  };
+
+  const handleEdit = (resource: Resource) => {
+    if (onEditResource) {
+      onEditResource(resource);
     }
   };
 
@@ -122,6 +152,7 @@ export function ResourceGrid({
             completed={completedResourceIds.includes(resource.id)}
             onComplete={() => handleComplete(resource.id)}
             onDelete={() => handleDelete(resource.id)}
+            onEdit={() => handleEdit(resource)}
           />
         </div>
       ))}

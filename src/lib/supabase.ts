@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
@@ -145,26 +144,30 @@ export const getUnitsForClassInstance = async (classInstanceId: number) => {
 
 // Helper function to get resources for a specific unit
 export const getResourcesForUnit = async (unitId: number, type: 'assignment' | 'note' | 'past_paper') => {
-  const { data, error } = await supabase
-    .from('resources')
-    .select(`
-      *,
-      user:user_id (
-        name, 
-        profile_picture_url,
-        admission_number
-      )
-    `)
-    .eq('unit_id', unitId)
-    .eq('type', type)
-    .order('created_at', { ascending: false });
-  
-  if (error) {
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/resources?unit_id=eq.${unitId}&type=eq.${type}&select=*,user:user_id(name,profile_picture_url,admission_number)&order=created_at.desc`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API error: ${JSON.stringify(errorData)}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
     console.error(`Error fetching ${type}s:`, error);
     throw error;
   }
-  
-  return data;
 };
 
 // Helper function to get marketing content
@@ -337,25 +340,24 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
 // Helper to get comments for a resource
 export const getCommentsForResource = async (resourceId: number) => {
   try {
-    const { data, error } = await supabase
-      .from('comments')
-      .select(`
-        *,
-        user:user_id (
-          id,
-          name,
-          admission_number,
-          profile_picture_url
-        )
-      `)
-      .eq('resource_id', resourceId)
-      .order('created_at', { ascending: false });
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/comments?resource_id=eq.${resourceId}&select=*,user:user_id(id,name,admission_number,profile_picture_url)&order=created_at.desc`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`
+        }
+      }
+    );
     
-    if (error) {
-      console.error('Error fetching comments:', error);
-      throw error;
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`API error: ${errorData}`);
     }
     
+    const data = await response.json();
     return data || [];
   } catch (error) {
     console.error('Error in getCommentsForResource:', error);
@@ -368,45 +370,84 @@ export const addCommentToResource = async (resourceId: number, userId: string, c
   try {
     console.log('Submitting comment to resource:', resourceId);
     console.log('Current user ID:', userId);
-    console.log('Comment data to be inserted:', { content, resource_id: resourceId, user_id: userId });
     
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({
-        resource_id: resourceId,
-        user_id: userId,
-        content: content,
-        created_at: new Date().toISOString()
-      })
-      .select(`
-        *,
-        user:user_id (
-          id,
-          name,
-          admission_number,
-          profile_picture_url
-        )
-      `)
-      .single();
+    // Create the comment data
+    const commentData = {
+      resource_id: resourceId,
+      user_id: userId,
+      content: content,
+      created_at: new Date().toISOString()
+    };
     
-    if (error) {
-      console.log('API error response:', error);
-      throw new Error(`API error: ${JSON.stringify(error)}`);
+    console.log('Comment data to be inserted:', commentData);
+    
+    // Direct insert through REST API for consistent behavior
+    const response = await fetch(`${supabaseUrl}/rest/v1/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(commentData)
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API error: ${JSON.stringify(errorData)}`);
+    }
+    
+    const data = await response.json();
+    
+    // Fetch user details to attach to the comment
+    const userResponse = await fetch(
+      `${supabaseUrl}/rest/v1/users?id=eq.${userId}&select=id,name,admission_number,profile_picture_url`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`
+        }
+      }
+    );
+    
+    let userData = null;
+    if (userResponse.ok) {
+      const userDataArray = await userResponse.json();
+      if (userDataArray.length > 0) {
+        userData = userDataArray[0];
+      }
     }
     
     // Award points for commenting
     try {
-      await supabase
-        .from('users')
-        .update({ 
-          points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
-        })
-        .eq('id', userId);
+      const pointsResponse = await fetch(
+        `${supabaseUrl}/rest/v1/users?id=eq.${userId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseAnonKey,
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
+          })
+        }
+      );
+      
+      if (!pointsResponse.ok) {
+        console.warn('Could not update points for comment (non-critical)');
+      }
     } catch (pointsError) {
       console.warn('Could not update points for comment (non-critical):', pointsError);
     }
     
-    return data;
+    // Combine the comment with the user data
+    return { ...data[0], user: userData };
   } catch (error) {
     console.error('Failed to submit comment:', error);
     throw error;

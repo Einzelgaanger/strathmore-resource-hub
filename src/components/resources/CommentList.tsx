@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Trash2, MoreVertical } from 'lucide-react';
 import { 
@@ -47,21 +46,27 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       console.log('Submitting comment to resource:', resourceId);
       console.log('Current user ID:', user.id);
       
-      // Create the comment data
+      // Use direct REST API for consistent functionality
+      const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+      
+      // Create the comment data using same approach as upload
       const commentData = {
         content: newComment,
         resource_id: resourceId,
-        user_id: user.id
+        user_id: user.id,
+        created_at: new Date().toISOString()
       };
       
       console.log('Comment data to be inserted:', commentData);
       
-      // Direct insert through REST API if needed to avoid RLS issues
-      const response = await fetch('https://zsddctqjnymmtzxbrkvk.supabase.co/rest/v1/comments', {
+      // Direct insert through REST API with proper headers
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Prefer': 'return=representation'
         },
         body: JSON.stringify(commentData)
@@ -76,46 +81,51 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       const data = await response.json();
       console.log('Comment added via API successfully:', data);
       
-      // Fetch the user data to attach to the comment
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, name, admission_number, profile_picture_url')
-        .eq('id', user.id)
-        .single();
-        
-      if (userError) {
-        console.warn('Could not fetch user details for comment:', userError);
+      // Fetch the user data for the comment
+      const userResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/users?id=eq.${user.id}&select=id,name,admission_number,profile_picture_url`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        }
+      );
+      
+      let userData = null;
+      if (userResponse.ok) {
+        const userDataArray = await userResponse.json();
+        if (userDataArray.length > 0) {
+          userData = userDataArray[0];
+        }
       }
       
-      // Award points for commenting - direct update
+      // Update user points directly via REST API
       try {
-        // Fetch current user points
-        const { data: userPointsData, error: userPointsError } = await supabase
-          .from('users')
-          .select('points')
-          .eq('id', user.id)
-          .single();
-          
-        if (userPointsError) {
-          console.warn('Could not fetch user points:', userPointsError);
-        } else {
-          const currentPoints = userPointsData?.points || 0;
-          const newPoints = currentPoints + 1;
-          
-          const { error: pointsError } = await supabase
-            .from('users')
-            .update({ points: newPoints })
-            .eq('id', user.id);
-            
-          if (pointsError) {
-            console.warn('Could not update points for comment (non-critical):', pointsError);
-          } else {
-            // Update local user state
-            if (user) {
-              user.points = newPoints;
-            }
-            toast.success('+1 point for commenting!');
+        const pointsResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/users?id=eq.${user.id}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+              points: user.points + 1
+            })
           }
+        );
+        
+        if (pointsResponse.ok) {
+          // Update local user state
+          if (user) {
+            user.points += 1;
+          }
+          toast.success('+1 point for commenting!');
         }
       } catch (pointsError) {
         console.warn('Could not update points for comment (non-critical):', pointsError);
@@ -145,7 +155,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       toast.success('Comment added successfully');
     } catch (error) {
       console.error('Failed to submit comment:', error);
-      toast.error('Failed to submit comment. Make sure you are logged in.');
+      toast.error('Failed to submit comment. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -158,32 +168,52 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
     }
     
     try {
+      const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+      
       // Get the comment to check ownership
-      const { data: commentData, error: fetchError } = await supabase
-        .from('comments')
-        .select('user_id')
-        .eq('id', commentId)
-        .single();
-        
-      if (fetchError) throw fetchError;
+      const fetchResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/comments?id=eq.${commentId}&select=user_id`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        }
+      );
+      
+      if (!fetchResponse.ok) {
+        throw new Error(`Failed to fetch comment: ${fetchResponse.statusText}`);
+      }
+      
+      const commentData = await fetchResponse.json();
+      if (commentData.length === 0) {
+        throw new Error('Comment not found');
+      }
       
       // Check if user is authorized to delete
-      if (commentData.user_id !== user.id && !user.is_admin && !user.is_super_admin) {
+      if (commentData[0].user_id !== user.id && !user.is_admin && !user.is_super_admin) {
         toast.error('You can only delete your own comments');
         return;
       }
       
       // Delete using direct REST API call to ensure it works
-      const response = await fetch(`https://zsddctqjnymmtzxbrkvk.supabase.co/rest/v1/comments?id=eq.${commentId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY'
+      const deleteResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/comments?id=eq.${commentId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
         }
-      });
+      );
       
-      if (!response.ok) {
-        const errorData = await response.text();
+      if (!deleteResponse.ok) {
+        const errorData = await deleteResponse.text();
         throw new Error(`API error: ${errorData}`);
       }
       

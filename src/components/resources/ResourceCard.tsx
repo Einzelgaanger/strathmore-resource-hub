@@ -1,4 +1,3 @@
-
 import { FC, useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,8 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Resource, User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import { Download, ThumbsUp, ThumbsDown, MessageSquare, Check, AlertTriangle } from 'lucide-react';
-import { supabase } from '@/lib/supabase'; // Use the common supabase import
+import { Download, ThumbsUp, ThumbsDown, MessageSquare, Check, AlertTriangle, Edit } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { CommentList } from './CommentList';
@@ -18,6 +17,7 @@ interface ResourceCardProps {
   completed?: boolean;
   onComplete?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
 }
 
 const ResourceCard: FC<ResourceCardProps> = ({
@@ -26,6 +26,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
   completed = false,
   onComplete,
   onDelete,
+  onEdit
 }) => {
   const { user: currentUser } = useAuth();
   const [likes, setLikes] = useState(resource.likes || 0);
@@ -38,18 +39,15 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const [hasDisliked, setHasDisliked] = useState(false);
   const [isOverdue, setIsOverdue] = useState(false);
 
-  // Check if resource is overdue
   useEffect(() => {
     if (resource.deadline) {
       setIsOverdue(new Date(resource.deadline) < new Date());
     }
   }, [resource.deadline]);
 
-  // Check if user has liked or disliked this resource before
   useEffect(() => {
     if (!currentUser) return;
     
-    // Check user interaction from local storage to avoid additional DB queries
     const userInteractions = localStorage.getItem(`resource-interactions-${currentUser.id}`);
     if (userInteractions) {
       try {
@@ -71,22 +69,26 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       console.log('Fetching comments for resource ID:', resource.id);
       
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`
-          *,
-          user:user_id (
-            id,
-            name,
-            admission_number,
-            profile_picture_url
-          )
-        `)
-        .eq('resource_id', resource.id)
-        .order('created_at', { ascending: false });
+      const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
       
-      if (error) throw error;
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/comments?resource_id=eq.${resource.id}&order=created_at.desc&select=*,user:user_id(id,name,admission_number,profile_picture_url)`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        }
+      );
       
+      if (!response.ok) {
+        throw new Error(`Failed to fetch comments: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
       console.log('Fetched comments:', data);
       setComments(data || []);
     } catch (error) {
@@ -101,7 +103,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
       return;
     }
     
-    // Open the file in a new tab
     window.open(resource.file_url, '_blank');
   };
 
@@ -109,7 +110,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
     if (!currentUser) return;
     
     try {
-      // Store interaction in local storage
       const userInteractions = localStorage.getItem(`resource-interactions-${currentUser.id}`) || '{}';
       const interactions = JSON.parse(userInteractions);
       
@@ -146,7 +146,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       setLoading(true);
       
-      // First get the current resource values to ensure we're updating with the latest
       const { data: currentResource, error: fetchError } = await supabase
         .from('resources')
         .select('likes')
@@ -157,7 +156,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       const newLikes = (currentResource?.likes || 0) + 1;
       
-      // Update the resource likes count
       const { error } = await supabase
         .from('resources')
         .update({ likes: newLikes })
@@ -165,7 +163,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       if (error) throw error;
       
-      // Add points to the creator (5 points per like)
       if (resource.user_id) {
         const { data: userData, error: userError } = await supabase
           .from('users')
@@ -223,7 +220,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       setLoading(true);
       
-      // First get the current resource values to ensure we're updating with the latest
       const { data: currentResource, error: fetchError } = await supabase
         .from('resources')
         .select('dislikes')
@@ -234,7 +230,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       const newDislikes = (currentResource?.dislikes || 0) + 1;
       
-      // Update the resource dislikes count
       const { error } = await supabase
         .from('resources')
         .update({ dislikes: newDislikes })
@@ -242,7 +237,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
       
       if (error) throw error;
       
-      // Subtract points from the creator (2 points per dislike)
       if (resource.user_id) {
         const { data: userData, error: userError } = await supabase
           .from('users')
@@ -254,7 +248,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
           console.warn('Could not fetch user points:', userError);
         } else {
           const currentPoints = userData?.points || 0;
-          const newPoints = Math.max(0, currentPoints - 2); // Ensure points don't go below 0
+          const newPoints = Math.max(0, currentPoints - 2);
           
           const { error: pointsError } = await supabase
             .from('users')
@@ -290,80 +284,95 @@ const ResourceCard: FC<ResourceCardProps> = ({
     try {
       setLoading(true);
       
-      // Check if already completed
-      const { data: existingCompletion, error: checkError } = await supabase
-        .from('completions')
-        .select('id')
-        .eq('user_id', currentUser.id)
-        .eq('resource_id', resource.id)
-        .maybeSingle();
-        
-      if (checkError) throw checkError;
+      const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
       
-      if (existingCompletion) {
+      const checkResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/completions?user_id=eq.${currentUser.id}&resource_id=eq.${resource.id}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        }
+      );
+      
+      if (!checkResponse.ok) {
+        throw new Error(`Failed to check completion status: ${checkResponse.statusText}`);
+      }
+      
+      const existingCompletions = await checkResponse.json();
+      
+      if (existingCompletions && existingCompletions.length > 0) {
         toast.info('You have already completed this assignment');
         setIsCompleted(true);
         return;
       }
       
-      // Apply points modification based on timeliness
-      let pointsChange = isOverdue ? 3 : 10; // 10 points for on-time, 3 for late
+      let pointsChange = isOverdue ? 3 : 10;
       
-      // First get the current user points
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('points')
-        .eq('id', currentUser.id)
-        .single();
+      const userResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            points: currentUser.points + pointsChange
+          })
+        }
+      );
       
-      if (userError) {
-        console.warn('Could not fetch user points:', userError);
+      if (!userResponse.ok) {
+        console.warn('Could not update points, but completion was recorded');
       } else {
-        const currentPoints = userData?.points || 0;
-        const newPoints = currentPoints + pointsChange;
+        if (currentUser) {
+          currentUser.points += pointsChange;
+        }
         
-        // Update user points
-        const { error: pointsError } = await supabase
-          .from('users')
-          .update({ points: newPoints })
-          .eq('id', currentUser.id);
-          
-        if (pointsError) {
-          console.warn('Could not update points:', pointsError);
+        if (isOverdue) {
+          toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
         } else {
-          // Also update local state in currentUser
-          if (currentUser) {
-            currentUser.points = newPoints;
-          }
-          
-          if (isOverdue) {
-            toast.info(`Assignment marked complete but overdue. +${pointsChange} points.`);
-          } else {
-            toast.success(`Assignment completed on time! +${pointsChange} points!`);
-          }
+          toast.success(`Assignment completed on time! +${pointsChange} points!`);
         }
       }
       
-      // Create a completion record
-      const { error: completionError } = await supabase
-        .from('completions')
-        .insert({
-          user_id: currentUser.id,
-          resource_id: resource.id,
-          completed_at: new Date().toISOString()
-        });
+      const completionResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            user_id: currentUser.id,
+            resource_id: resource.id,
+            completed_at: new Date().toISOString()
+          })
+        }
+      );
       
-      if (completionError) {
-        if (completionError.code === '23505') { // Duplicate key violation
+      if (!completionResponse.ok) {
+        const errorData = await completionResponse.json();
+        if (errorData.code === '23505') {
           toast.warning('You have already completed this assignment');
-        } else {
-          throw completionError;
+          setIsCompleted(true);
+          return;
         }
-      } else {
-        // Call the onComplete handler
-        onComplete();
-        setIsCompleted(true);
+        throw new Error(`Failed to create completion: ${JSON.stringify(errorData)}`);
       }
+      
+      onComplete();
+      setIsCompleted(true);
+      
     } catch (error: any) {
       console.error('Error marking resource as completed:', error);
       toast.error('Failed to mark resource as completed. Make sure you are logged in.');
@@ -472,6 +481,19 @@ const ResourceCard: FC<ResourceCardProps> = ({
           <span className="hidden sm:inline">Comment</span>
         </Button>
         
+        {onEdit && currentUser && (currentUser.id === resource.user_id || currentUser.is_admin || currentUser.is_super_admin) && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onEdit}
+            disabled={loading}
+            className="mobile-friendly-button"
+          >
+            <Edit className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">Edit</span>
+          </Button>
+        )}
+        
         {resource.type === 'assignment' && !isCompleted && onComplete && !isOverdue && (
           <Button 
             size="sm" 
@@ -520,7 +542,6 @@ const ResourceCard: FC<ResourceCardProps> = ({
 
 export default ResourceCard;
 
-// Helper functions
 function getVariantForType(type: string) {
   switch (type) {
     case 'assignment':
