@@ -29,8 +29,8 @@ const ResourceCard: FC<ResourceCardProps> = ({
   onEdit
 }) => {
   const { user: currentUser } = useAuth();
-  const [likes, setLikes] = useState(resource.likes || 0);
-  const [dislikes, setDislikes] = useState(resource.dislikes || 0);
+  const [likes, setLikes] = useState(0);
+  const [dislikes, setDislikes] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isCompleted, setIsCompleted] = useState(completed);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -38,6 +38,63 @@ const ResourceCard: FC<ResourceCardProps> = ({
   const [hasLiked, setHasLiked] = useState(false);
   const [hasDisliked, setHasDisliked] = useState(false);
   const [isOverdue, setIsOverdue] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
+
+  // Fetch current likes/dislikes and comments from database on component mount
+  useEffect(() => {
+    const fetchResourceData = async () => {
+      try {
+        const SUPABASE_URL = 'https://zsddctqjnymmtzxbrkvk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzZGRjdHFqbnltbXR6eGJya3ZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMzc5OTAsImV4cCI6MjA1OTcxMzk5MH0.cz8akzHOmeAyfH5ma4H13vgahGqvzzBBmsvEqVYAtgY';
+        
+        // Fetch current resource data for likes/dislikes
+        const resourceResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/resources?id=eq.${resource.id}&select=likes,dislikes`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          }
+        );
+        
+        if (resourceResponse.ok) {
+          const resourceData = await resourceResponse.json();
+          if (resourceData.length > 0) {
+            setLikes(resourceData[0].likes || 0);
+            setDislikes(resourceData[0].dislikes || 0);
+          }
+        }
+
+        // Fetch comment count
+        const commentResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/comments?resource_id=eq.${resource.id}&select=id`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+          }
+        );
+        
+        if (commentResponse.ok) {
+          const commentData = await commentResponse.json();
+          setCommentCount(commentData.length);
+        }
+      } catch (error) {
+        console.error('Error fetching resource data:', error);
+        // Fallback to resource props
+        setLikes(resource.likes || 0);
+        setDislikes(resource.dislikes || 0);
+      }
+    };
+
+    fetchResourceData();
+  }, [resource.id, resource.likes, resource.dislikes]);
 
   useEffect(() => {
     if (resource.deadline) {
@@ -91,19 +148,45 @@ const ResourceCard: FC<ResourceCardProps> = ({
       const data = await response.json();
       console.log('Fetched comments:', data);
       setComments(data || []);
+      setCommentCount(data?.length || 0);
     } catch (error) {
       console.error('Error fetching comments:', error);
       toast.error('Could not load comments. Please try again.');
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!resource.file_url) {
       toast.error('No file available for download');
       return;
     }
     
-    window.open(resource.file_url, '_blank');
+    try {
+      // Handle both blob URLs and regular URLs
+      if (resource.file_url.startsWith('blob:')) {
+        // For blob URLs, try to open directly
+        window.open(resource.file_url, '_blank');
+      } else {
+        // For regular URLs, fetch and download
+        const response = await fetch(resource.file_url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch file');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = resource.title || 'download';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download file. The file may no longer be available.');
+    }
   };
 
   const updateUserInteraction = (interaction: 'liked' | 'disliked') => {
@@ -392,6 +475,7 @@ const ResourceCard: FC<ResourceCardProps> = ({
 
   const handleAddComment = (newComment: any) => {
     setComments([newComment, ...comments]);
+    setCommentCount(commentCount + 1);
   };
   
   const cardClasses = `vibrant-card transform hover:-translate-y-1 h-full flex flex-col ${
@@ -475,10 +559,15 @@ const ResourceCard: FC<ResourceCardProps> = ({
           variant="ghost"
           onClick={handleCommentClick}
           disabled={loading}
-          className="mobile-friendly-button"
+          className="mobile-friendly-button relative"
         >
           <MessageSquare className="h-4 w-4 mr-1" />
           <span className="hidden sm:inline">Comment</span>
+          {commentCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+              {commentCount}
+            </span>
+          )}
         </Button>
         
         {onEdit && currentUser && (currentUser.id === resource.user_id || currentUser.is_admin || currentUser.is_super_admin) && (

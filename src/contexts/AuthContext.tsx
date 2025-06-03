@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginByAdmissionNumber } from '@/lib/supabase';
@@ -35,8 +34,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         
         if (storedUser) {
           const userData = JSON.parse(storedUser);
-          setUser(userData);
-          console.info("Found existing session for user:", userData.name);
+          
+          // Verify the session is still valid by checking the database
+          try {
+            const freshUserData = await loginByAdmissionNumber(userData.admission_number, 'stratizens#web');
+            setUser(freshUserData);
+            localStorage.setItem('strathmore-user', JSON.stringify(freshUserData));
+            console.info("Session verified and refreshed for user:", freshUserData.name);
+          } catch (error) {
+            console.warn("Session verification failed, using cached data:", error);
+            setUser(userData);
+          }
         } else {
           console.info("No active session found");
           setUser(null);
@@ -84,6 +92,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setUser(null);
       localStorage.removeItem('strathmore-user');
+      // Clear any cached interaction data
+      if (user) {
+        localStorage.removeItem(`resource-interactions-${user.id}`);
+      }
       navigate('/login');
     } catch (error) {
       console.error("Logout error:", error);
@@ -126,7 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       // Update password in local state (note: this is just for demo purposes)
-      const updatedUserData = { ...user, password: newPassword };
+      const updatedUserData = { ...user };
       setUser(updatedUserData);
       localStorage.setItem('strathmore-user', JSON.stringify(updatedUserData));
 

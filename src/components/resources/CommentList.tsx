@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Comment } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,12 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
   const { user } = useAuth();
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [localComments, setLocalComments] = useState<Comment[]>(comments);
+  const [localComments, setLocalComments] = useState<Comment[]>([]);
+
+  // Update local comments when comments prop changes
+  useEffect(() => {
+    setLocalComments(comments);
+  }, [comments]);
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +57,7 @@ export function CommentList({ comments, resourceId, onCommentAdded }: CommentLis
       
       // Create the comment data using same approach as upload
       const commentData = {
-        content: newComment,
+        content: newComment.trim(),
         resource_id: resourceId,
         user_id: user.id,
         created_at: new Date().toISOString()
