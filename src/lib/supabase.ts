@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
@@ -10,7 +11,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
 
-// Create the Supabase client with explicit settings to fix the auth issue
+// Create a single Supabase client instance to avoid multiple GoTrueClient warnings
 export const supabase = createClient<Database>(
   supabaseUrl,
   supabaseAnonKey,
@@ -310,26 +311,6 @@ export const loginByAdmissionNumber = async (admissionNumber: string, password: 
       console.warn('Could not update last login time:', updateError);
     }
     
-    // We'll try Supabase auth login but we won't block if it fails
-    // Our app uses the custom auth system primarily
-    try {
-      // This is mostly to get RLS policies to work since they often rely on auth.uid()
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: 'stratizens#web'
-      });
-      
-      if (authError) {
-        // We can safely ignore this error as we're not relying on Supabase Auth
-        console.warn('Supabase Auth login failed (non-critical):', authError);
-      } else {
-        console.log('Supabase Auth login successful');
-      }
-    } catch (authError) {
-      // Just log the error but continue with our custom authentication
-      console.warn('Supabase Auth login failed (non-critical):', authError);
-    }
-    
     return userData;
   } catch (error: any) {
     console.error('Login by admission error:', error);
@@ -365,46 +346,16 @@ export const getCommentsForResource = async (resourceId: number) => {
   }
 };
 
-// Add a comment to a resource
-export const addCommentToResource = async (resourceId: number, userId: string, content: string) => {
+// Direct API helper for resource deletion
+export const deleteResourceFromDatabase = async (resourceId: number) => {
   try {
-    console.log('Submitting comment to resource:', resourceId);
-    console.log('Current user ID:', userId);
+    console.log('Deleting resource via API:', resourceId);
     
-    // Create the comment data
-    const commentData = {
-      resource_id: resourceId,
-      user_id: userId,
-      content: content,
-      created_at: new Date().toISOString()
-    };
-    
-    console.log('Comment data to be inserted:', commentData);
-    
-    // Direct insert through REST API for consistent behavior
-    const response = await fetch(`${supabaseUrl}/rest/v1/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(commentData)
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API error: ${JSON.stringify(errorData)}`);
-    }
-    
-    const data = await response.json();
-    
-    // Fetch user details to attach to the comment
-    const userResponse = await fetch(
-      `${supabaseUrl}/rest/v1/users?id=eq.${userId}&select=id,name,admission_number,profile_picture_url`,
+    // 1. Delete completions
+    const completionsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/completions?resource_id=eq.${resourceId}`,
       {
-        method: 'GET',
+        method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseAnonKey,
@@ -413,43 +364,48 @@ export const addCommentToResource = async (resourceId: number, userId: string, c
       }
     );
     
-    let userData = null;
-    if (userResponse.ok) {
-      const userDataArray = await userResponse.json();
-      if (userDataArray.length > 0) {
-        userData = userDataArray[0];
-      }
+    if (!completionsResponse.ok && completionsResponse.status !== 404) {
+      throw new Error(`Failed to delete completions: ${completionsResponse.statusText}`);
     }
     
-    // Award points for commenting
-    try {
-      const pointsResponse = await fetch(
-        `${supabaseUrl}/rest/v1/users?id=eq.${userId}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseAnonKey,
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify({
-            points: supabase.rpc('increment_points', { user_id: userId, amount: 1 })
-          })
+    // 2. Delete comments
+    const commentsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/comments?resource_id=eq.${resourceId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`
         }
-      );
-      
-      if (!pointsResponse.ok) {
-        console.warn('Could not update points for comment (non-critical)');
       }
-    } catch (pointsError) {
-      console.warn('Could not update points for comment (non-critical):', pointsError);
+    );
+    
+    if (!commentsResponse.ok && commentsResponse.status !== 404) {
+      throw new Error(`Failed to delete comments: ${commentsResponse.statusText}`);
     }
     
-    // Combine the comment with the user data
-    return { ...data[0], user: userData };
+    // 3. Delete the resource
+    const resourceResponse = await fetch(
+      `${supabaseUrl}/rest/v1/resources?id=eq.${resourceId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`
+        }
+      }
+    );
+    
+    if (!resourceResponse.ok) {
+      throw new Error(`Failed to delete resource: ${resourceResponse.statusText}`);
+    }
+    
+    console.log('Resource successfully deleted from database');
+    return true;
   } catch (error) {
-    console.error('Failed to submit comment:', error);
+    console.error('Database deletion failed:', error);
     throw error;
   }
 };

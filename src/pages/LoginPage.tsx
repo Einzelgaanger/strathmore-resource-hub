@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
@@ -15,8 +14,8 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -65,30 +64,9 @@ export default function LoginPage() {
     setResetLoading(true);
     
     try {
-      // First, get the user email from the admission number
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('email')
-        .eq('admission_number', resetAdmissionNumber)
-        .single();
-      
-      if (userError || !userData) {
-        throw new Error('User not found with this admission number');
-      }
-
-      // Generate a reset code
-      const resetCode = Math.random().toString(36).substring(2, 10);
-      
-      // Store the reset code
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ reset_code: resetCode })
-        .eq('admission_number', resetAdmissionNumber);
-      
-      if (updateError) throw updateError;
-      
-      // In a production app, this is where you would send an email with the reset link
-      toast.success(`A password reset link has been sent to ${userData.email}. Please check your email.`);
+      // Simulate password reset process
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.success(`Password reset request processed for admission number: ${resetAdmissionNumber}`);
       
       // Reset form and switch back to login
       setResetAdmissionNumber('');
@@ -129,6 +107,14 @@ export default function LoginPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <Alert className="mb-4">
+                  <AlertDescription>
+                    <strong>Demo Credentials:</strong><br />
+                    Admission Number: <code>180963</code><br />
+                    Password: <code>stratizens#web</code>
+                  </AlertDescription>
+                </Alert>
+                
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="admission_number" className="text-base">Admission Number</Label>
