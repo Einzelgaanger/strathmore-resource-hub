@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginByAdmissionNumber } from '@/lib/supabase';
@@ -115,15 +116,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return { success: false, error: "Not authenticated" };
       }
 
+      // Get stored password from localStorage or use default
+      const storedUser = localStorage.getItem('strathmore-user');
+      const currentStoredPassword = storedUser ? JSON.parse(storedUser).password : 'stratizens#web';
+
       // Verify current password
-      if (user.password !== currentPassword && currentPassword !== 'stratizens#web') {
+      if (currentStoredPassword !== currentPassword && currentPassword !== 'stratizens#web') {
         return { success: false, error: "Current password is incorrect" };
       }
 
-      // Update password in local state
-      const updatedUser = { ...user, password: newPassword };
-      setUser(updatedUser);
-      localStorage.setItem('strathmore-user', JSON.stringify(updatedUser));
+      // Update password in local state (note: this is just for demo purposes)
+      const updatedUserData = { ...user, password: newPassword };
+      setUser(updatedUserData);
+      localStorage.setItem('strathmore-user', JSON.stringify(updatedUserData));
 
       return { success: true };
     } catch (error: any) {
